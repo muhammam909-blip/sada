@@ -3,6 +3,7 @@ import SwiftUI
 struct LibraryView: View {
     @Environment(LibraryStore.self) private var library
     @State private var showSettings = false
+    @State private var importMode: ImportMode?
 
     private let columns = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
 
@@ -16,8 +17,14 @@ struct LibraryView: View {
                         LibraryCategoryRow(title: "Albums", icon: "square.stack", count: library.albums.count, route: .albums)
                         Divider().padding(.leading, 52)
                         LibraryCategoryRow(title: "Artists", icon: "music.microphone", count: library.artists.count, route: .artists)
+                        Divider().padding(.leading, 52)
+                        LibraryCategoryRow(title: "Playlists", icon: "music.note.list", count: library.playlists.count, route: .playlists)
+                        Divider().padding(.leading, 52)
+                        LibraryCategoryRow(title: "Favorites", icon: "heart", count: library.favorites.count, route: .favorites)
                     }
                     .padding(.horizontal)
+
+                    ImportStatusBanner().padding(.top, 12)
 
                     if !library.albums.isEmpty {
                         Text("Recently Added")
@@ -41,7 +48,7 @@ struct LibraryView: View {
             .navigationTitle("Library")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    if library.isScanning { ProgressView() }
+                    AddMusicMenu(mode: $importMode)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
@@ -50,6 +57,7 @@ struct LibraryView: View {
             .refreshable { await library.rescan() }
             .libraryDestinations()
             .sheet(isPresented: $showSettings) { SettingsView() }
+            .addMusicImporter($importMode)
         }
     }
 }

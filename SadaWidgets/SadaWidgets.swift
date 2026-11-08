@@ -1,4 +1,4 @@
-import AppIntents
+﻿import AppIntents
 import SwiftUI
 import WidgetKit
 
@@ -119,7 +119,7 @@ struct NowPlayingWidget: Widget {
             NowPlayingWidgetView(entry: entry)
         }
         .configurationDisplayName("Now Playing")
-        .description("See and control what's playing in Sada.")
+        .description("See and control what's playing in MHM.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .accessoryRectangular, .accessoryCircular])
         .contentMarginsDisabled()
     }

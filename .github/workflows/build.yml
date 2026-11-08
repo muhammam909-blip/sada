@@ -1,4 +1,4 @@
-name: Build IPA
+﻿name: Build IPA
 
 on:
   push:
@@ -53,15 +53,15 @@ jobs:
           REPO="${{ github.repository }}"
           cat > source.json <<EOF
           {
-            "name": "Sada",
+            "name": "MHM",
             "identifier": "com.hammam.sada.source",
             "apps": [{
-              "name": "Sada",
+              "name": "MHM",
               "bundleIdentifier": "com.hammam.sada",
               "developerName": "Hammam",
               "subtitle": "Music player",
-              "localizedDescription": "Personal music player with synced lyrics, auto artwork, widgets and Dynamic Island.",
-              "iconURL": "https://raw.githubusercontent.com/${REPO}/main/Sada/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
+              "localizedDescription": "MHM - personal music player with synced lyrics, auto artwork, widgets and Dynamic Island.",
+              "iconURL": "https://raw.githubusercontent.com/${REPO}/main/Sada/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-default.png",
               "tintColor": "FF3764",
               "versions": [{
                 "version": "${VERSION}",

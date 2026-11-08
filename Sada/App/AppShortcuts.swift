@@ -1,8 +1,8 @@
-import AppIntents
+﻿import AppIntents
 
 struct ShuffleAllIntent: AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Shuffle All Songs"
-    static let description = IntentDescription("Shuffles your whole library in Sada.")
+    static let description = IntentDescription("Shuffles your whole library in MHM.")
 
     init() {}
 

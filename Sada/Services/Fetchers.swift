@@ -1,4 +1,4 @@
-import Foundation
+﻿import Foundation
 
 enum FetchResult<T> {
     case found(T)
@@ -10,7 +10,7 @@ enum HTTP {
     static let session: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 15
-        config.httpAdditionalHeaders = ["User-Agent": "Sada/0.1 (personal iOS music player)"]
+        config.httpAdditionalHeaders = ["User-Agent": "MHM/0.2 (personal iOS music player)"]
         return URLSession(configuration: config)
     }()
 
@@ -136,6 +136,112 @@ enum ArtworkFetcher {
             }
         }
         return best.map { .found($0) } ?? .notFound
+    }
+}
+
+// MARK: - Manual search candidates
+
+struct ArtworkCandidate: Identifiable, Hashable {
+    let id: String
+    let thumbURL: URL
+    let fullURL: URL
+    let caption: String
+}
+
+extension ArtworkFetcher {
+    /// Many results for the "Find Artwork" picker (Deezer + Apple Music).
+    static func candidates(query: String) async -> [ArtworkCandidate] {
+        var out: [ArtworkCandidate] = []
+        var seen = Set<String>()
+
+        struct DZ: Decodable {
+            let data: [Item]
+            struct Item: Decodable {
+                let title: String?
+                let artist: N?
+                let album: A?
+            }
+            struct N: Decodable { let name: String? }
+            struct A: Decodable { let title: String?; let cover_medium: String?; let cover_xl: String? }
+        }
+        if let url = HTTP.url("https://api.deezer.com/search", ["q": query, "limit": "25"]),
+           case let (data, 200)? = await HTTP.get(url),
+           let res = try? JSONDecoder().decode(DZ.self, from: data) {
+            for item in res.data {
+                guard let thumb = item.album?.cover_medium.flatMap(URL.init(string:)),
+                      let full = item.album?.cover_xl.flatMap(URL.init(string:)),
+                      seen.insert(full.absoluteString).inserted else { continue }
+                out.append(ArtworkCandidate(id: full.absoluteString, thumbURL: thumb, fullURL: full,
+                                            caption: "\(item.artist?.name ?? "") — \(item.album?.title ?? item.title ?? "")"))
+            }
+        }
+
+        struct IT: Decodable {
+            let results: [Item]
+            struct Item: Decodable { let artistName: String?; let collectionName: String?; let artworkUrl100: String? }
+        }
+        let country = query.containsArabic ? "eg" : "us"
+        if let url = HTTP.url("https://itunes.apple.com/search", ["term": query, "entity": "album", "limit": "25", "country": country]),
+           case let (data, 200)? = await HTTP.get(url),
+           let res = try? JSONDecoder().decode(IT.self, from: data) {
+            for item in res.results {
+                guard let small = item.artworkUrl100,
+                      let thumb = URL(string: small.replacingOccurrences(of: "100x100bb", with: "300x300bb")),
+                      let full = URL(string: small.replacingOccurrences(of: "100x100bb", with: "1200x1200bb")),
+                      seen.insert(full.absoluteString).inserted else { continue }
+                out.append(ArtworkCandidate(id: full.absoluteString, thumbURL: thumb, fullURL: full,
+                                            caption: "\(item.artistName ?? "") — \(item.collectionName ?? "")"))
+            }
+        }
+        return out
+    }
+}
+
+struct LyricsCandidate: Identifiable, Hashable {
+    let id: Int
+    let title: String
+    let artist: String
+    let album: String?
+    let duration: Double?
+    let synced: String?
+    let plain: String?
+
+    var text: String? { synced ?? plain }
+}
+
+extension LyricsFetcher {
+    /// All matches for the "Find Lyrics" picker.
+    static func search(title: String, artist: String) async -> [LyricsCandidate] {
+        struct Item: Decodable {
+            let id: Int
+            let trackName: String?
+            let artistName: String?
+            let albumName: String?
+            let duration: Double?
+            let plainLyrics: String?
+            let syncedLyrics: String?
+        }
+        var queries: [[String: String?]] = []
+        if !artist.isEmpty { queries.append(["track_name": title, "artist_name": artist]) }
+        queries.append(["q": "\(artist) \(title)".trimmingCharacters(in: .whitespaces)])
+        queries.append(["track_name": title])
+
+        var out: [LyricsCandidate] = []
+        var seen = Set<Int>()
+        for query in queries {
+            guard let url = HTTP.url("https://lrclib.net/api/search", query),
+                  case let (data, 200)? = await HTTP.get(url),
+                  let items = try? JSONDecoder().decode([Item].self, from: data) else { continue }
+            for item in items where seen.insert(item.id).inserted {
+                let synced = (item.syncedLyrics?.isEmpty ?? true) ? nil : item.syncedLyrics
+                let plain = (item.plainLyrics?.isEmpty ?? true) ? nil : item.plainLyrics
+                guard synced != nil || plain != nil else { continue }
+                out.append(LyricsCandidate(id: item.id, title: item.trackName ?? "", artist: item.artistName ?? "",
+                                           album: item.albumName, duration: item.duration, synced: synced, plain: plain))
+            }
+            if out.count >= 30 { break }
+        }
+        return out.sorted { ($0.synced != nil ? 0 : 1) < ($1.synced != nil ? 0 : 1) }
     }
 }
 

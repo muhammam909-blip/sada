@@ -106,8 +106,21 @@ struct TitleRow: View {
             }
             Spacer()
             if let track = player.current {
+                let favorite = LibraryStore.shared.track(id: track.id)?.isFavorite ?? false
+                Button {
+                    LibraryStore.shared.toggleFavorite(track.id)
+                } label: {
+                    Image(systemName: favorite ? "heart.fill" : "heart")
+                        .font(.headline)
+                        .foregroundStyle(favorite ? Color.pink : .white)
+                        .frame(width: 34, height: 34)
+                        .background(.white.opacity(0.15), in: Circle())
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                .buttonStyle(.plain)
+                .sensoryFeedback(.success, trigger: favorite)
                 Menu {
-                    TrackMenuItems(track: track)
+                    TrackMenuItems(track: track, showQueueActions: false)
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.headline)
@@ -237,16 +250,42 @@ struct TransportControls: View {
 struct BottomBar: View {
     @Binding var mode: NowPlayingView.Mode
 
+    @Environment(PlayerEngine.self) private var player
+
     var body: some View {
         HStack {
             toggle(.lyrics, on: "quote.bubble.fill", off: "quote.bubble")
             Spacer()
-            AirPlayButton().frame(width: 44, height: 44)
+            sleepMenu
             Spacer()
             toggle(.queue, on: "list.bullet.circle.fill", off: "list.bullet")
         }
         .font(.title3)
         .padding(.horizontal, 24)
+    }
+
+    private var sleepMenu: some View {
+        Menu {
+            if player.sleepTimerActive {
+                Button(role: .destructive) { player.setSleepTimer(minutes: nil) } label: { Label("Turn Off Timer", systemImage: "moon.zzz") }
+            }
+            Button("End of Current Song") { player.sleepAtEndOfCurrentTrack() }
+            ForEach([15, 30, 45, 60, 90], id: \.self) { m in
+                Button("\(m) Minutes") { player.setSleepTimer(minutes: m) }
+            }
+        } label: {
+            VStack(spacing: 1) {
+                Image(systemName: player.sleepTimerActive ? "moon.zzz.fill" : "moon.zzz")
+                if let end = player.sleepTimerEnd {
+                    Text(end, style: .timer)
+                        .font(.system(size: 9, weight: .semibold).monospacedDigit())
+                } else if player.sleepAtEndOfTrack {
+                    Text("song end").font(.system(size: 9, weight: .semibold))
+                }
+            }
+            .frame(width: 54, height: 44)
+            .foregroundStyle(.white.opacity(player.sleepTimerActive ? 1 : 0.65))
+        }
     }
 
     private func toggle(_ target: NowPlayingView.Mode, on: String, off: String) -> some View {

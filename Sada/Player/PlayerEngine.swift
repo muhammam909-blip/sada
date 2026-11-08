@@ -357,6 +357,12 @@ final class PlayerEngine {
         guard let item, item === currentItem else { return }
         if let t = current { LibraryStore.shared.markPlayed(t.id) }
 
+        if sleepAtEndOfTrack {
+            sleepAtEndOfTrack = false
+            if index + 1 < queue.count { index += 1 }
+            loadCurrent(autoplay: false)
+            return
+        }
         if repeatMode == .one {
             loadCurrent(autoplay: true)
             return
@@ -407,8 +413,90 @@ final class PlayerEngine {
         persistState()
     }
 
+    /// Title/artist/favourite edited in the library: refresh queue copies.
+    func trackInfoDidChange(_ id: String) {
+        guard let fresh = LibraryStore.shared.track(id: id) else { return }
+        for i in queue.indices where queue[i].id == id { queue[i] = fresh }
+        for i in originalQueue.indices where originalQueue[i].id == id { originalQueue[i] = fresh }
+        if current?.id == id {
+            updateNowPlayingInfo()
+            publishExternalState()
+        }
+    }
+
+    func lyricsDidChange(for id: String) {
+        guard current?.id == id else { return }
+        if let fresh = LibraryStore.shared.track(id: id) { queue[index] = fresh }
+        loadLyrics()
+        publishExternalState()
+    }
+
+    /// Called before a song is deleted from disk.
+    func removeEverywhere(_ id: String) {
+        originalQueue.removeAll { $0.id == id }
+        guard queue.contains(where: { $0.id == id }) else { return }
+        let wasCurrent = current?.id == id
+        let wasPlaying = isPlaying
+        let currentID = current?.id
+        queue.removeAll { $0.id == id }
+        if wasCurrent {
+            if queue.isEmpty {
+                player.removeAllItems()
+                currentItem = nil
+                index = 0
+                isPlaying = false
+                trackDidChange()
+            } else {
+                index = min(index, queue.count - 1)
+                loadCurrent(autoplay: wasPlaying)
+            }
+        } else {
+            index = queue.firstIndex(where: { $0.id == currentID }) ?? 0
+            enqueueNext()
+            publishExternalState()
+        }
+    }
+
+    // MARK: - Sleep timer
+
+    private(set) var sleepTimerEnd: Date?
+    private(set) var sleepAtEndOfTrack = false
+    @ObservationIgnored private var sleepTask: Task<Void, Never>?
+
+    var sleepTimerActive: Bool { sleepTimerEnd != nil || sleepAtEndOfTrack }
+
+    func setSleepTimer(minutes: Int?) {
+        sleepTask?.cancel()
+        sleepAtEndOfTrack = false
+        guard let minutes else { sleepTimerEnd = nil; return }
+        sleepTimerEnd = Date().addingTimeInterval(Double(minutes) * 60)
+        sleepTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Double(minutes) * 60))
+            guard !Task.isCancelled else { return }
+            await self?.fadeOutAndPause()
+        }
+    }
+
+    func sleepAtEndOfCurrentTrack() {
+        sleepTask?.cancel()
+        sleepTimerEnd = nil
+        sleepAtEndOfTrack = true
+    }
+
+    private func fadeOutAndPause() async {
+        let start = player.volume
+        for step in stride(from: 1.0, through: 0.0, by: -0.05) {
+            player.volume = start * Float(step)
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+        pause()
+        player.volume = start
+        sleepTimerEnd = nil
+    }
+
     func artworkDidChange(for ids: Set<String>) {
         guard let t = current, ids.contains(t.id), let fresh = LibraryStore.shared.track(id: t.id) else { return }
+        LiveActivityManager.shared.invalidateThumb()
         queue[index] = fresh
         currentArtwork = LibraryStore.shared.artworkImage(for: fresh)
         palette = ColorExtractor.palette(from: currentArtwork)

@@ -41,6 +41,36 @@ struct SadaApp: App {
 final class AppRouter {
     static let shared = AppRouter()
     var showNowPlaying = false
+    var trackSheet: TrackSheet?
+    var deleteCandidate: Track?
+}
+
+enum TrackSheet: Identifiable {
+    case edit(Track)
+    case artwork(Track)
+    case lyrics(Track)
+    case addToPlaylist(Track)
+
+    var id: String {
+        switch self {
+        case .edit(let t): "edit-\(t.id)"
+        case .artwork(let t): "art-\(t.id)"
+        case .lyrics(let t): "lyr-\(t.id)"
+        case .addToPlaylist(let t): "pl-\(t.id)"
+        }
+    }
+}
+
+enum Appearance: String, CaseIterable, Identifiable {
+    case dark = "Dark", light = "Light", system = "System"
+    var id: String { rawValue }
+    var scheme: ColorScheme? {
+        switch self {
+        case .dark: .dark
+        case .light: .light
+        case .system: nil
+        }
+    }
 }
 
 enum AppSettings {

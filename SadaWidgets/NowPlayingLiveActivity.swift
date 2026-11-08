@@ -14,8 +14,8 @@ struct NowPlayingLiveActivity: Widget {
             let s = context.state
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    WidgetArtwork(file: s.artworkFile, cornerRadius: 10)
-                        .frame(width: 56, height: 56)
+                    LiveArt(state: s, cornerRadius: 10)
+                        .frame(width: 52, height: 52)
                         .padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
@@ -40,38 +40,64 @@ struct NowPlayingLiveActivity: Widget {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(spacing: 8) {
+                    VStack(spacing: 6) {
                         if let line = s.lyricLine, !line.isEmpty {
                             Text(line)
-                                .font(.system(size: 17, weight: .semibold))
+                                .font(.system(size: 18, weight: .bold))
                                 .multilineTextAlignment(.center)
                                 .lineLimit(2)
+                                .minimumScaleFactor(0.8)
                                 .frame(maxWidth: .infinity)
-                                .contentTransition(.opacity)
+                            if let next = s.nextLyricLine, !next.isEmpty {
+                                Text(next)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .frame(maxWidth: .infinity)
+                            }
                         }
                         LiveProgress(state: s).tint(.white)
                     }
                     .padding(.horizontal, 6)
                 }
             } compactLeading: {
-                WidgetArtwork(file: s.artworkFile, cornerRadius: 6)
+                LiveArt(state: s, cornerRadius: 6)
                     .frame(width: 24, height: 24)
             } compactTrailing: {
+                // Small live preview of the current lyric line.
                 if let line = s.lyricLine, !line.isEmpty {
                     Text(line)
-                        .font(.caption2.weight(.semibold))
+                        .font(.system(size: 11, weight: .semibold))
                         .lineLimit(1)
-                        .frame(maxWidth: 64)
+                        .minimumScaleFactor(0.75)
+                        .frame(maxWidth: 110)
+                        .foregroundStyle(.white)
                 } else {
                     Image(systemName: s.isPlaying ? "waveform" : "pause.fill")
                         .foregroundStyle(.pink)
                 }
             } minimal: {
-                WidgetArtwork(file: s.artworkFile, cornerRadius: 11)
+                LiveArt(state: s, cornerRadius: 11)
                     .frame(width: 22, height: 22)
             }
             .keylineTint(.pink)
             .widgetURL(URL(string: "sada://nowplaying"))
+        }
+    }
+}
+
+struct LiveArt: View {
+    let state: NowPlayingAttributes.ContentState
+    var cornerRadius: CGFloat
+
+    var body: some View {
+        if let data = state.artworkThumb, let image = UIImage(data: data) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        } else {
+            WidgetArtwork(file: state.artworkFile, cornerRadius: cornerRadius)
         }
     }
 }
@@ -98,7 +124,7 @@ struct LockScreenLiveView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
-                WidgetArtwork(file: state.artworkFile, cornerRadius: 10)
+                LiveArt(state: state, cornerRadius: 10)
                     .frame(width: 54, height: 54)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(state.title).font(.headline).lineLimit(1)

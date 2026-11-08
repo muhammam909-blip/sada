@@ -1,4 +1,4 @@
-import AppIntents
+﻿import AppIntents
 import Foundation
 
 // These intents are compiled into both the app and the widget extension.
@@ -7,7 +7,7 @@ import Foundation
 
 struct TogglePlaybackIntent: AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Play or Pause"
-    static let description = IntentDescription("Plays or pauses the music in Sada.")
+    static let description = IntentDescription("Plays or pauses the music in MHM.")
 
     init() {}
 

@@ -150,18 +150,29 @@ struct AlbumCard: View {
 /// Context-menu actions shared by every song list.
 struct TrackMenuItems: View {
     let track: Track
+    var showQueueActions = true
     @Environment(PlayerEngine.self) private var player
+    @Environment(LibraryStore.self) private var library
+    @Environment(AppRouter.self) private var router
+
+    private var fresh: Track { library.track(id: track.id) ?? track }
 
     var body: some View {
-        Button { player.playNext(track) } label: { Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") }
-        Button { player.addToQueue(track) } label: { Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward") }
+        if showQueueActions {
+            Button { player.playNext(track) } label: { Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") }
+            Button { player.addToQueue(track) } label: { Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward") }
+            Divider()
+        }
+        Button { library.toggleFavorite(track.id) } label: {
+            Label(fresh.isFavorite ? "Remove from Favorites" : "Favorite", systemImage: fresh.isFavorite ? "heart.slash" : "heart")
+        }
+        Button { router.trackSheet = .addToPlaylist(fresh) } label: { Label("Add to Playlist…", systemImage: "text.badge.plus") }
         Divider()
-        Button {
-            Task { await MetadataEnricher.shared.refetchArtwork(for: track) }
-        } label: { Label("Find Artwork", systemImage: "photo.badge.magnifyingglass") }
-        Button {
-            Task { _ = await MetadataEnricher.shared.fetchLyrics(for: track, force: true) }
-        } label: { Label("Find Lyrics", systemImage: "quote.bubble") }
+        Button { router.trackSheet = .edit(fresh) } label: { Label("Edit Info…", systemImage: "pencil") }
+        Button { router.trackSheet = .artwork(fresh) } label: { Label("Find Artwork…", systemImage: "photo.badge.magnifyingglass") }
+        Button { router.trackSheet = .lyrics(fresh) } label: { Label("Find Lyrics…", systemImage: "quote.bubble") }
+        Divider()
+        Button(role: .destructive) { router.deleteCandidate = fresh } label: { Label("Delete from Library", systemImage: "trash") }
     }
 }
 
@@ -223,6 +234,9 @@ extension View {
             case .songs: SongsView()
             case .albums: AlbumsGridView()
             case .artists: ArtistsListView()
+            case .playlists: PlaylistsView()
+            case .playlist(let id): PlaylistDetailView(playlistID: id)
+            case .favorites: FavoritesView()
             }
         }
     }

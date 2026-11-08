@@ -8,6 +8,8 @@ struct NowPlayingAttributes: ActivityAttributes {
         var title: String
         var artist: String
         var artworkFile: String?
+        /// Tiny JPEG (≈1–2 KB) embedded so the island never depends on shared storage.
+        var artworkThumb: Data?
         var isPlaying: Bool
         var elapsed: Double
         var duration: Double

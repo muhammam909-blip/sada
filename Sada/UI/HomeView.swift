@@ -4,26 +4,21 @@ import UniformTypeIdentifiers
 struct HomeView: View {
     @Environment(LibraryStore.self) private var library
     @Environment(PlayerEngine.self) private var player
-    @State private var showImporter = false
+    @State private var importMode: ImportMode?
     @State private var showSettings = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 if library.tracks.isEmpty {
-                    EmptyLibraryView(showImporter: $showImporter)
+                    EmptyLibraryView(importMode: $importMode)
                         .padding(.top, 80)
                 } else {
                     VStack(alignment: .leading, spacing: 30) {
                         PlayShuffleButtons(tracks: library.tracks)
                             .padding(.horizontal)
 
-                        if let status = library.enrichmentStatus {
-                            Label(status, systemImage: "sparkles")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal)
-                        }
+                        ImportStatusBanner()
 
                         AlbumShelf(title: "Recently Added", albums: Array(library.recentlyAddedAlbums.prefix(16)))
 
@@ -38,7 +33,7 @@ struct HomeView: View {
                         }
 
                         if library.artists.count > 1 {
-                            ArtistShelf(artists: Array(library.artists.shuffled().prefix(12)))
+                            ArtistShelf(artists: Array(library.artists.sorted { $0.tracks.count > $1.tracks.count }.prefix(12)))
                         }
                     }
                     .padding(.vertical)
@@ -47,7 +42,7 @@ struct HomeView: View {
             .navigationTitle("Home")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showImporter = true } label: { Image(systemName: "plus") }
+                    AddMusicMenu(mode: $importMode)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
@@ -55,18 +50,14 @@ struct HomeView: View {
             }
             .refreshable { await library.rescan() }
             .libraryDestinations()
-            .fileImporter(isPresented: $showImporter, allowedContentTypes: [.audio, .folder], allowsMultipleSelection: true) { result in
-                if case .success(let urls) = result {
-                    Task { await library.importFiles(urls) }
-                }
-            }
+            .addMusicImporter($importMode)
             .sheet(isPresented: $showSettings) { SettingsView() }
         }
     }
 }
 
 struct EmptyLibraryView: View {
-    @Binding var showImporter: Bool
+    @Binding var importMode: ImportMode?
 
     var body: some View {
         VStack(spacing: 18) {
@@ -76,17 +67,24 @@ struct EmptyLibraryView: View {
                 .symbolRenderingMode(.hierarchical)
             Text("Your library is empty")
                 .font(.title2.bold())
-            Text("Import songs from Files, or drop them into\nFiles › On My iPhone › Sada › Music.")
+            Text("Link your music folder (e.g. from nPlayer) without copying,\nor copy songs into MHM.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
             Button {
-                showImporter = true
+                importMode = .linkFolder
             } label: {
-                Label("Import Music", systemImage: "square.and.arrow.down")
+                Label("Link a Music Folder", systemImage: "link")
                     .padding(.horizontal, 8)
             }
             .buttonStyle(.glassProminent)
             .controlSize(.large)
+            Button {
+                importMode = .copyFolder
+            } label: {
+                Label("Copy a Folder", systemImage: "folder.badge.plus")
+            }
+            .buttonStyle(.glass)
+            ImportStatusBanner()
         }
         .padding()
         .frame(maxWidth: .infinity)

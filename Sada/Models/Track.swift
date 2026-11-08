@@ -21,6 +21,11 @@ struct Track: Identifiable, Codable, Hashable {
     var lyricsFetched: Bool
     var playCount: Int
     var lastPlayed: Date?
+    /// nil = the app's own Documents folder, otherwise a LinkedFolder id.
+    var sourceID: String?
+    var favorite: Bool?
+
+    var isFavorite: Bool { favorite ?? false }
 
     static let unknownArtist = "Unknown Artist"
     static let unknownAlbum = "Unknown Album"
@@ -57,10 +62,27 @@ struct Artist: Identifiable, Hashable {
     var artworkTrack: Track? { tracks.first(where: \.hasArtwork) ?? tracks.first }
 }
 
+/// A folder from another app (e.g. nPlayer) that is read in place, without copying.
+struct LinkedFolder: Codable, Identifiable, Hashable {
+    var id: String
+    var name: String
+    var bookmark: Data
+}
+
+struct Playlist: Codable, Identifiable, Hashable {
+    var id: String
+    var name: String
+    var trackIDs: [String]
+    var createdAt: Date
+}
+
 enum Route: Hashable {
     case album(String)
     case artist(String)
     case songs
     case albums
     case artists
+    case playlists
+    case playlist(String)
+    case favorites
 }

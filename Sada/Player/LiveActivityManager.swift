@@ -25,6 +25,7 @@ final class LiveActivityManager {
             title: track.title,
             artist: track.displayArtist,
             artworkFile: SharedArtwork.export(track, library: LibraryStore.shared),
+            artworkThumb: thumb(for: track),
             isPlaying: engine.isPlaying,
             elapsed: engine.currentTime,
             duration: engine.duration,
@@ -49,6 +50,21 @@ final class LiveActivityManager {
             // Requests only succeed while the app is in the foreground; that's fine.
             activity = try? Activity.request(attributes: NowPlayingAttributes(), content: content, pushType: nil)
         }
+    }
+
+    private var thumbCache: (id: String, data: Data?)?
+
+    func invalidateThumb() { thumbCache = nil }
+
+    private func thumb(for track: Track) -> Data? {
+        if let cache = thumbCache, cache.id == track.id { return cache.data }
+        var data: Data?
+        if let image = LibraryStore.shared.artworkImage(for: track, maxPixel: 56) {
+            data = image.jpegData(compressionQuality: 0.55)
+            if (data?.count ?? 0) > 2400 { data = image.jpegData(compressionQuality: 0.3) }
+        }
+        thumbCache = (track.id, data)
+        return data
     }
 
     func end() {
