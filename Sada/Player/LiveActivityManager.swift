@@ -59,7 +59,9 @@ final class LiveActivityManager {
     private func thumb(for track: Track) -> Data? {
         if let cache = thumbCache, cache.id == track.id { return cache.data }
         var data: Data?
-        if let image = LibraryStore.shared.artworkImage(for: track, maxPixel: 56) {
+        let engine = PlayerEngine.shared
+        let fallback = engine.current?.id == track.id ? engine.currentArtwork?.preparingThumbnail(of: CGSize(width: 56, height: 56)) : nil
+        if let image = LibraryStore.shared.artworkImage(for: track, maxPixel: 56) ?? fallback {
             data = image.jpegData(compressionQuality: 0.55)
             if (data?.count ?? 0) > 2400 { data = image.jpegData(compressionQuality: 0.3) }
         }

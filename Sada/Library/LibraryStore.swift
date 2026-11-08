@@ -25,9 +25,13 @@ final class LibraryStore {
     private(set) var artists: [Artist] = []
     private(set) var playlists: [Playlist] = []
     private(set) var linkedFolders: [LinkedFolder] = []
+    private(set) var favoriteOrder: [String] = []
+    private(set) var plays: [PlayEvent] = []
     private(set) var isScanning = false
     /// Bumped whenever artwork changes so views reload images.
     private(set) var artworkRevision = 0
+    /// Bumped when folders are created/renamed/moved so folder screens refresh.
+    var folderRevision = 0
     var enrichmentStatus: String?
     var importStatus: String?
 
@@ -47,8 +51,15 @@ final class LibraryStore {
     private var libraryFile: URL { supportURL.appendingPathComponent("library.json") }
     private var playlistsFile: URL { supportURL.appendingPathComponent("playlists.json") }
     private var foldersFile: URL { supportURL.appendingPathComponent("folders.json") }
+    private var favoritesFile: URL { supportURL.appendingPathComponent("favorites.json") }
+    private var playsFile: URL { supportURL.appendingPathComponent("plays.json") }
 
-    var favorites: [Track] { tracks.filter(\.isFavorite) }
+    /// Favourites in the order the user arranged them.
+    var favorites: [Track] {
+        let ordered = favoriteOrder.compactMap { track(id: $0) }.filter(\.isFavorite)
+        let known = Set(favoriteOrder)
+        return ordered + tracks.filter { $0.isFavorite && !known.contains($0.id) }
+    }
 
     private init() {
         let fm = FileManager.default
@@ -129,6 +140,14 @@ final class LibraryStore {
            let lists = try? decoder.decode([Playlist].self, from: data) {
             playlists = lists
         }
+        if let data = try? Data(contentsOf: favoritesFile),
+           let order = try? decoder.decode([String].self, from: data) {
+            favoriteOrder = order
+        }
+        if let data = try? Data(contentsOf: playsFile),
+           let events = try? decoder.decode([PlayEvent].self, from: data) {
+            plays = events
+        }
         if let data = try? Data(contentsOf: libraryFile),
            let decoded = try? decoder.decode([Track].self, from: data) {
             tracks = decoded
@@ -147,6 +166,18 @@ final class LibraryStore {
 
     private func savePlaylists() {
         if let data = try? JSONEncoder().encode(playlists) { try? data.write(to: playlistsFile, options: .atomic) }
+    }
+
+    private func saveFavorites() {
+        if let data = try? JSONEncoder().encode(favoriteOrder) { try? data.write(to: favoritesFile, options: .atomic) }
+    }
+
+    private func savePlays() {
+        let snapshot = plays
+        let file = playsFile
+        Task.detached(priority: .utility) {
+            if let data = try? JSONEncoder().encode(snapshot) { try? data.write(to: file, options: .atomic) }
+        }
     }
 
     private func saveFolders() {
@@ -323,7 +354,7 @@ final class LibraryStore {
         let root = rootURL(for: file.sourceID) ?? documentsURL
         let url = root.appendingPathComponent(file.relativePath)
         let meta = await MetadataReader.read(url: url)
-        let id = previous?.id ?? Self.makeID(file.sourceID.map { "\($0)|\(file.relativePath)" } ?? file.relativePath)
+        let id = previous?.id ?? newID(for: file)
         let folderGuess = Self.inferFromFolders(file.relativePath)
 
         var hasArtwork = previous?.hasArtwork ?? FileManager.default.fileExists(atPath: artworkFileURL(id).path)
@@ -503,6 +534,13 @@ final class LibraryStore {
 
     func toggleFavorite(_ id: String) {
         mutate(id) { $0.favorite = !($0.favorite ?? false) }
+        if track(id: id)?.isFavorite == true {
+            favoriteOrder.removeAll { $0 == id }
+            favoriteOrder.insert(id, at: 0)
+        } else {
+            favoriteOrder.removeAll { $0 == id }
+        }
+        saveFavorites()
         save()
         PlayerEngine.shared.trackInfoDidChange(id)
     }
@@ -629,5 +667,239 @@ final class LibraryStore {
         guard !ids.isEmpty else { return }
         for i in playlists.indices { playlists[i].trackIDs.removeAll { ids.contains($0) } }
         savePlaylists()
+    }
+}
+
+// MARK: - Listening history, favourites order, smart playlists
+
+struct PlayEvent: Codable, Hashable {
+    let id: String
+    let date: Date
+    let seconds: Double
+}
+
+enum SmartPlaylist: String, CaseIterable, Identifiable {
+    case recentlyAdded = "Recently Added"
+    case topMonth = "Top 25 This Month"
+    case mostPlayed = "Most Played"
+    case forgotten = "Not Played in a Month"
+    case neverPlayed = "Never Played"
+
+    var id: String { rawValue }
+    var icon: String {
+        switch self {
+        case .recentlyAdded: "clock.badge.plus"
+        case .topMonth: "chart.bar.fill"
+        case .mostPlayed: "flame.fill"
+        case .forgotten: "zzz"
+        case .neverPlayed: "sparkles"
+        }
+    }
+}
+
+extension LibraryStore {
+    /// Id for a new file; avoids clashing with a song that was moved away from this path.
+    fileprivate func newID(for file: FileEntry) -> String {
+        let base = Self.makeID(file.sourceID.map { "\($0)|\(file.relativePath)" } ?? file.relativePath)
+        if let other = track(id: base), other.relativePath != file.relativePath || other.sourceID != file.sourceID {
+            return Self.makeID("\(file.key)#\(UUID().uuidString)")
+        }
+        return base
+    }
+
+    /// Counts a play once the song was heard for 30 s (or half of a short song).
+    func recordListen(_ id: String, seconds: Double, duration: Double) {
+        guard seconds >= min(30, max(duration * 0.5, 5)) else { return }
+        plays.append(PlayEvent(id: id, date: Date(), seconds: seconds))
+        mutate(id) { $0.playCount += 1; $0.lastPlayed = Date() }
+        save()
+        savePlays()
+    }
+
+    func addFavorites(_ ids: [String]) {
+        for id in ids where track(id: id)?.isFavorite != true {
+            mutate(id) { $0.favorite = true }
+            favoriteOrder.removeAll { $0 == id }
+            favoriteOrder.append(id)
+        }
+        saveFavorites()
+        save()
+    }
+
+    func removeFavorites(at offsets: IndexSet) {
+        let list = favorites
+        for i in offsets where list.indices.contains(i) {
+            mutate(list[i].id) { $0.favorite = false }
+            favoriteOrder.removeAll { $0 == list[i].id }
+        }
+        saveFavorites()
+        save()
+    }
+
+    func moveFavorites(from source: IndexSet, to destination: Int) {
+        var ids = favorites.map(\.id)
+        ids.move(fromOffsets: source, toOffset: destination)
+        favoriteOrder = ids
+        saveFavorites()
+    }
+
+    func add(_ ids: [String], to playlistID: String) {
+        guard let i = playlists.firstIndex(where: { $0.id == playlistID }) else { return }
+        playlists[i].trackIDs.append(contentsOf: ids)
+        savePlaylists()
+    }
+
+    func movePlaylists(from source: IndexSet, to destination: Int) {
+        playlists.move(fromOffsets: source, toOffset: destination)
+        savePlaylists()
+    }
+
+    func tracks(for smart: SmartPlaylist) -> [Track] {
+        let monthAgo = Date().addingTimeInterval(-30 * 86400)
+        switch smart {
+        case .recentlyAdded:
+            return tracks.filter { $0.dateAdded > monthAgo }.sorted { $0.dateAdded > $1.dateAdded }
+        case .topMonth:
+            let counts = Dictionary(grouping: plays.filter { $0.date > monthAgo }, by: \.id).mapValues(\.count)
+            return counts.sorted { $0.value > $1.value }.prefix(25).compactMap { track(id: $0.key) }
+        case .mostPlayed:
+            return Array(mostPlayed.prefix(50))
+        case .forgotten:
+            return tracks.filter { ($0.lastPlayed ?? .distantPast) < monthAgo && $0.playCount > 0 }
+                .sorted { $0.playCount > $1.playCount }
+        case .neverPlayed:
+            return tracks.filter { $0.playCount == 0 }
+        }
+    }
+
+    // MARK: Folders (nPlayer-style browsing)
+
+    struct FolderListing {
+        var folders: [String] // names
+        var tracks: [Track]
+    }
+
+    func folderURL(sourceID: String?, path: String) -> URL? {
+        guard let root = rootURL(for: sourceID) else { return nil }
+        return path.isEmpty ? root : root.appendingPathComponent(path, isDirectory: true)
+    }
+
+    func listing(sourceID: String?, path: String) -> FolderListing {
+        var folders: [String] = []
+        if let dir = folderURL(sourceID: sourceID, path: path),
+           let items = try? FileManager.default.contentsOfDirectory(
+               at: dir, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
+            for url in items where (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                if sourceID == nil, path.isEmpty, url.lastPathComponent == "Inbox" { continue }
+                folders.append(url.lastPathComponent)
+            }
+        }
+        folders.sort { $0.localizedStandardCompare($1) == .orderedAscending }
+        let inFolder = tracks.filter { t in
+            guard t.sourceID == sourceID else { return false }
+            let parent = (t.relativePath as NSString).deletingLastPathComponent
+            return parent == path
+        }
+        .sorted { ($0.relativePath as NSString).lastPathComponent.localizedStandardCompare(($1.relativePath as NSString).lastPathComponent) == .orderedAscending }
+        return FolderListing(folders: folders, tracks: inFolder)
+    }
+
+    /// Songs in a folder and all its subfolders.
+    func tracksRecursive(sourceID: String?, path: String) -> [Track] {
+        let prefix = path.isEmpty ? "" : path + "/"
+        return tracks.filter { $0.sourceID == sourceID && $0.relativePath.hasPrefix(prefix) }
+            .sorted { $0.relativePath.localizedStandardCompare($1.relativePath) == .orderedAscending }
+    }
+
+    func createFolder(sourceID: String?, parent: String, name: String) {
+        let clean = name.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "/", with: "-")
+        guard !clean.isEmpty, let dir = folderURL(sourceID: sourceID, path: parent) else { return }
+        try? FileManager.default.createDirectory(at: dir.appendingPathComponent(clean, isDirectory: true),
+                                                 withIntermediateDirectories: true)
+        folderRevision += 1
+    }
+
+    func move(_ ids: [String], toSource sourceID: String?, folder: String) {
+        guard let root = rootURL(for: sourceID) else { return }
+        let fm = FileManager.default
+        let destDir = folder.isEmpty ? root : root.appendingPathComponent(folder, isDirectory: true)
+        try? fm.createDirectory(at: destDir, withIntermediateDirectories: true)
+        for id in ids {
+            guard let t = track(id: id) else { continue }
+            let from = url(for: t)
+            let currentParent = (t.relativePath as NSString).deletingLastPathComponent
+            if t.sourceID == sourceID && currentParent == folder { continue }
+            let to = uniqueURL(destDir.appendingPathComponent(from.lastPathComponent))
+            do {
+                try fm.moveItem(at: from, to: to)
+            } catch {
+                do {
+                    try fm.copyItem(at: from, to: to)
+                    try fm.removeItem(at: from)
+                } catch { continue }
+            }
+            let rel = folder.isEmpty ? to.lastPathComponent : folder + "/" + to.lastPathComponent
+            let size = (try? to.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? t.fileSize
+            let modified = (try? to.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? t.modifiedAt
+            mutate(id) { $0.relativePath = rel; $0.sourceID = sourceID; $0.fileSize = size; $0.modifiedAt = modified }
+        }
+        save()
+        folderRevision += 1
+    }
+
+    func renameFolder(sourceID: String?, path: String, to newName: String) {
+        let clean = newName.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "/", with: "-")
+        guard !clean.isEmpty, let from = folderURL(sourceID: sourceID, path: path) else { return }
+        let parent = (path as NSString).deletingLastPathComponent
+        let newPath = parent.isEmpty ? clean : parent + "/" + clean
+        guard let to = folderURL(sourceID: sourceID, path: newPath),
+              (try? FileManager.default.moveItem(at: from, to: to)) != nil else { return }
+        let prefix = path + "/"
+        var copy = tracks
+        for i in copy.indices where copy[i].sourceID == sourceID && copy[i].relativePath.hasPrefix(prefix) {
+            copy[i].relativePath = newPath + "/" + copy[i].relativePath.dropFirst(prefix.count)
+        }
+        tracks = copy
+        save()
+        folderRevision += 1
+    }
+
+    func deleteFolder(sourceID: String?, path: String) {
+        guard !path.isEmpty, let dir = folderURL(sourceID: sourceID, path: path) else { return }
+        let doomed = tracksRecursive(sourceID: sourceID, path: path)
+        for t in doomed { PlayerEngine.shared.removeEverywhere(t.id) }
+        try? FileManager.default.removeItem(at: dir)
+        let ids = Set(doomed.map(\.id))
+        for id in ids {
+            try? FileManager.default.removeItem(at: artworkFileURL(id))
+            try? FileManager.default.removeItem(at: lyricsFileURL(id))
+        }
+        tracks.removeAll { ids.contains($0.id) }
+        removeFromPlaylists(ids)
+        save()
+        folderRevision += 1
+    }
+
+    /// Every folder (for the "Move to…" picker): (sourceID, path, display name).
+    func allFolders() -> [(sourceID: String?, path: String, name: String)] {
+        var out: [(String?, String, String)] = []
+        var roots: [(String?, String)] = [(nil, "On My iPhone (MHM)")]
+        roots += linkedFolders.filter { isFolderAvailable($0) }.map { ($0.id, $0.name) }
+        let fm = FileManager.default
+        for (sid, name) in roots {
+            guard let root = rootURL(for: sid) else { continue }
+            out.append((sid, "", name))
+            let rootPath = root.resolvingSymlinksInPath().path
+            guard let e = fm.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { continue }
+            while let url = e.nextObject() as? URL {
+                guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+                var p = url.resolvingSymlinksInPath().path
+                if p.hasPrefix(rootPath) { p.removeFirst(rootPath.count) }
+                while p.hasPrefix("/") { p.removeFirst() }
+                if sid == nil && (p == "Inbox" || p.hasPrefix("Inbox/")) { continue }
+                out.append((sid, p, "\(name)/\(p)"))
+            }
+        }
+        return out.map { (sourceID: $0.0, path: $0.1, name: $0.2) }
     }
 }

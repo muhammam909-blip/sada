@@ -61,7 +61,7 @@ struct LyricsView: View {
                     .foregroundStyle(.white.opacity(0.6))
                 Text("No lyrics found").font(.headline)
                 Button("Search Again") { player.fetchLyrics(force: true) }
-                    .buttonStyle(.glass)
+                    .adaptiveButton()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -74,11 +74,12 @@ struct LyricLineView: View {
     let active: Bool
     let passed: Bool
     let rtl: Bool
+    @AppStorage(ThemeKeys.lyricsSize) private var scale: Double = 1.0
 
     var body: some View {
         let isBreak = text.isEmpty
         Text(isBreak ? "•  •  •" : text)
-            .font(synced ? .system(size: 30, weight: .bold) : .system(size: 22, weight: .semibold))
+            .font(synced ? .system(size: 30 * scale, weight: .bold) : .system(size: 22 * scale, weight: .semibold))
             .multilineTextAlignment(rtl ? .trailing : .leading)
             .foregroundStyle(.white.opacity(!synced || active ? 1 : (passed ? 0.32 : 0.42)))
             .blur(radius: synced && !active ? 0.8 : 0)

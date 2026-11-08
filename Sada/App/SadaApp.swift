@@ -43,6 +43,8 @@ final class AppRouter {
     var showNowPlaying = false
     var trackSheet: TrackSheet?
     var deleteCandidate: Track?
+    var tab: AppTab = .home
+    var onlineQuery: String?
 }
 
 enum TrackSheet: Identifiable {
@@ -50,6 +52,8 @@ enum TrackSheet: Identifiable {
     case artwork(Track)
     case lyrics(Track)
     case addToPlaylist(Track)
+    case move([String])
+    case addSongs(playlistID: String?) // nil = Favorites
 
     var id: String {
         switch self {
@@ -57,8 +61,14 @@ enum TrackSheet: Identifiable {
         case .artwork(let t): "art-\(t.id)"
         case .lyrics(let t): "lyr-\(t.id)"
         case .addToPlaylist(let t): "pl-\(t.id)"
+        case .move(let ids): "move-\(ids.joined(separator: ","))"
+        case .addSongs(let p): "add-\(p ?? "fav")"
         }
     }
+}
+
+enum AppTab: Hashable {
+    case home, library, online, search
 }
 
 enum Appearance: String, CaseIterable, Identifiable {

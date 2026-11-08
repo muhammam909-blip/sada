@@ -76,14 +76,14 @@ struct EmptyLibraryView: View {
                 Label("Link a Music Folder", systemImage: "link")
                     .padding(.horizontal, 8)
             }
-            .buttonStyle(.glassProminent)
+            .adaptiveButton(prominent: true)
             .controlSize(.large)
             Button {
                 importMode = .copyFolder
             } label: {
                 Label("Copy a Folder", systemImage: "folder.badge.plus")
             }
-            .buttonStyle(.glass)
+            .adaptiveButton()
             ImportStatusBanner()
         }
         .padding()

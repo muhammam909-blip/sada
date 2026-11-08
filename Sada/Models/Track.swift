@@ -24,8 +24,11 @@ struct Track: Identifiable, Codable, Hashable {
     /// nil = the app's own Documents folder, otherwise a LinkedFolder id.
     var sourceID: String?
     var favorite: Bool?
+    /// Only for online (streamed) songs.
+    var remoteArtwork: String?
 
     var isFavorite: Bool { favorite ?? false }
+    var isOnline: Bool { sourceID == OnlineTrack.sourceID }
 
     static let unknownArtist = "Unknown Artist"
     static let unknownAlbum = "Unknown Album"
@@ -77,6 +80,9 @@ struct Playlist: Codable, Identifiable, Hashable {
 }
 
 enum Route: Hashable {
+    case folder(source: String?, path: String, title: String)
+    case smart(String)
+    case stats
     case album(String)
     case artist(String)
     case songs

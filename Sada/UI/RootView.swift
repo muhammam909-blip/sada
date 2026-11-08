@@ -4,18 +4,22 @@ struct RootView: View {
     @Environment(PlayerEngine.self) private var player
     @Environment(AppRouter.self) private var router
     @AppStorage("appearance") private var appearance: Appearance = .dark
+    @AppStorage(ThemeKeys.accent) private var accentHex = AccentPreset.pink.rawValue
     @Namespace private var namespace
 
     var body: some View {
         @Bindable var router = router
-        TabView {
-            Tab("Home", systemImage: "house.fill") {
+        TabView(selection: $router.tab) {
+            Tab("Home", systemImage: "house.fill", value: AppTab.home) {
                 HomeView()
             }
-            Tab("Library", systemImage: "square.stack.fill") {
+            Tab("Library", systemImage: "square.stack.fill", value: AppTab.library) {
                 LibraryView()
             }
-            Tab("Search", systemImage: "magnifyingglass", role: .search) {
+            Tab("Online", systemImage: "globe", value: AppTab.online) {
+                OnlineView()
+            }
+            Tab("Search", systemImage: "magnifyingglass", value: AppTab.search, role: .search) {
                 SearchView()
             }
         }
@@ -31,6 +35,7 @@ struct RootView: View {
                 .trackActionSheets(enabled: true)
         }
         .preferredColorScheme(appearance.scheme)
+        .tint(Color(hex: accentHex))
     }
 }
 
@@ -106,6 +111,8 @@ struct TrackActionSheets: ViewModifier {
                 case .artwork(let t): ArtworkSearchSheet(track: t)
                 case .lyrics(let t): LyricsSearchSheet(track: t)
                 case .addToPlaylist(let t): PlaylistPickerSheet(track: t)
+                case .move(let ids): MoveToFolderSheet(trackIDs: ids)
+                case .addSongs(let p): AddSongsSheet(playlistID: p)
                 }
             }
             .confirmationDialog(

@@ -13,6 +13,73 @@ struct OnlineSong: Identifiable, Hashable {
     let artworkURL: URL?
 }
 
+/// Online songs travel through the player as normal `Track`s with this source id.
+enum OnlineTrack {
+    static let sourceID = "online"
+
+    static func make(_ s: OnlineSong) -> Track {
+        Track(
+            id: "yt:\(s.id)", relativePath: s.id, title: s.title, artist: s.artist, album: s.album ?? "",
+            albumArtist: nil, genre: nil, trackNumber: nil, discNumber: nil, year: nil,
+            duration: DownloadManager.seconds(s.durationText), fileSize: 0, modifiedAt: Date(), dateAdded: Date(),
+            hasArtwork: false, hasLyrics: false, artworkFetched: true, lyricsFetched: true, playCount: 0, lastPlayed: nil,
+            sourceID: sourceID, favorite: nil, remoteArtwork: s.artworkURL?.absoluteString
+        )
+    }
+
+    static func song(from t: Track) -> OnlineSong {
+        OnlineSong(
+            id: t.relativePath, title: t.title, artist: t.artist, album: t.album.isEmpty ? nil : t.album,
+            durationText: t.duration > 0 ? formatTime(t.duration) : nil,
+            thumbnailURL: t.remoteArtwork.flatMap(URL.init(string:)),
+            artworkURL: t.remoteArtwork.flatMap(URL.init(string:))
+        )
+    }
+}
+
+/// Resolves and caches playable audio URLs for YouTube videos.
+@MainActor
+final class OnlineStreams {
+    static let shared = OnlineStreams()
+    private var cache: [String: (url: URL, at: Date)] = [:]
+    private var inflight: [String: Task<URL?, Never>] = [:]
+
+    func cachedURL(_ videoID: String) -> URL? {
+        guard let hit = cache[videoID], Date().timeIntervalSince(hit.at) < 4 * 3600 else { return nil }
+        return hit.url
+    }
+
+    func resolve(_ videoID: String) async -> URL? {
+        if let url = cachedURL(videoID) { return url }
+        if let task = inflight[videoID] { return await task.value }
+        let task = Task<URL?, Never> {
+            guard let streams = try? await YouTube(videoID: videoID).streams else { return nil }
+            let audio = streams.filterAudioOnly()
+            let stream = audio.filter { $0.fileExtension == .m4a }.highestAudioBitrateStream() ?? audio.highestAudioBitrateStream()
+            return stream?.url
+        }
+        inflight[videoID] = task
+        let url = await task.value
+        inflight[videoID] = nil
+        if let url { cache[videoID] = (url, Date()) }
+        return url
+    }
+}
+
+/// Search-as-you-type suggestions (same source YouTube uses).
+enum SearchSuggestions {
+    static func fetch(_ query: String) async -> [String] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard q.count >= 1,
+              let url = HTTP.url("https://suggestqueries.google.com/complete/search", ["client": "firefox", "ds": "yt", "q": q]),
+              case let (data, 200)? = await HTTP.get(url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+              json.count > 1, let list = json[1] as? [String]
+        else { return [] }
+        return Array(list.prefix(8))
+    }
+}
+
 enum OnlineSearchError: LocalizedError {
     case badResponse
     var errorDescription: String? { "Search failed. Check your connection and try again." }

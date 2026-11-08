@@ -9,7 +9,7 @@ struct NowPlayingView: View {
 
     var body: some View {
         ZStack {
-            NowPlayingBackground(colors: player.palette, animate: player.isPlaying)
+            NowPlayingBackdrop()
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
@@ -105,7 +105,9 @@ struct TitleRow: View {
                     .lineLimit(1)
             }
             Spacer()
-            if let track = player.current {
+            if let track = player.current, track.isOnline {
+                OnlineDownloadButton(song: OnlineTrack.song(from: track))
+            } else if let track = player.current {
                 let favorite = LibraryStore.shared.track(id: track.id)?.isFavorite ?? false
                 Button {
                     LibraryStore.shared.toggleFavorite(track.id)
@@ -129,6 +131,45 @@ struct TitleRow: View {
                 }
             }
         }
+    }
+}
+
+/// Download button shown on the player while streaming an online song.
+struct OnlineDownloadButton: View {
+    let song: OnlineSong
+    @State private var downloads = DownloadManager.shared
+
+    var body: some View {
+        let state = downloads.states[song.id]
+        Button {
+            downloads.download(song)
+        } label: {
+            HStack(spacing: 6) {
+                switch state {
+                case .downloading(let p):
+                    ProgressView(value: p).progressViewStyle(.circular).tint(.white).controlSize(.small)
+                    Text("\(Int(p * 100))%")
+                case .preparing, .finishing:
+                    ProgressView().tint(.white).controlSize(.small)
+                    Text("Saving")
+                case .done:
+                    Image(systemName: "checkmark.circle.fill")
+                    Text("Downloaded")
+                case .failed:
+                    Image(systemName: "arrow.clockwise")
+                    Text("Retry")
+                case nil:
+                    Image(systemName: "arrow.down.circle.fill")
+                    Text("Download")
+                }
+            }
+            .font(.subheadline.weight(.semibold))
+            .padding(.horizontal, 12)
+            .frame(height: 34)
+            .background(.white.opacity(0.18), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(state?.isActive == true || state == .done)
     }
 }
 
@@ -300,6 +341,35 @@ struct BottomBar: View {
                 }
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Background chosen in Settings › Appearance.
+struct NowPlayingBackdrop: View {
+    @Environment(PlayerEngine.self) private var player
+    @AppStorage(ThemeKeys.npBackground) private var style: NowPlayingBackgroundStyle = .animated
+
+    var body: some View {
+        switch style {
+        case .animated:
+            NowPlayingBackground(colors: player.palette, animate: player.isPlaying)
+        case .blurred:
+            ZStack {
+                Color.black
+                if let image = player.currentArtwork {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .blur(radius: 60)
+                        .scaleEffect(1.4)
+                        .opacity(0.9)
+                }
+                Color.black.opacity(0.35)
+            }
+            .animation(.easeInOut(duration: 0.6), value: player.current?.id)
+        case .black:
+            Color.black
+        }
     }
 }
 

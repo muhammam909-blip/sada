@@ -8,6 +8,11 @@ struct SettingsView: View {
     @AppStorage("autoLyrics") private var autoLyrics = true
     @AppStorage("lyricsInDynamicIsland") private var lyricsInDynamicIsland = false
     @State private var importMode: ImportMode?
+    @AppStorage(ThemeKeys.accent) private var accentHex = AccentPreset.pink.rawValue
+    @AppStorage(ThemeKeys.glass) private var glass = true
+    @AppStorage(ThemeKeys.npBackground) private var npBackground: NowPlayingBackgroundStyle = .animated
+    @AppStorage(ThemeKeys.lyricsSize) private var lyricsSize: Double = 1.0
+    @AppStorage("fadeSeconds") private var fadeSeconds: Double = 0
 
     private var version: String {
         let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
@@ -18,18 +23,82 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Appearance") {
+                Section {
                     Picker("Theme", selection: $appearance) {
                         ForEach(Appearance.allCases) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Accent Color")
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 10) {
+                                ForEach(AccentPreset.allCases) { preset in
+                                    Circle()
+                                        .fill(preset.color)
+                                        .frame(width: 30, height: 30)
+                                        .overlay {
+                                            if accentHex.uppercased() == preset.rawValue {
+                                                Image(systemName: "checkmark").font(.caption.bold()).foregroundStyle(.white)
+                                            }
+                                        }
+                                        .onTapGesture { accentHex = preset.rawValue }
+                                }
+                                ColorPicker("", selection: Binding(
+                                    get: { Color(hex: accentHex) },
+                                    set: { accentHex = $0.hexString }
+                                ), supportsOpacity: false)
+                                .labelsHidden()
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+
+                    Toggle("Liquid Glass Buttons", isOn: $glass)
+
+                    Picker("Player Background", selection: $npBackground) {
+                        ForEach(NowPlayingBackgroundStyle.allCases) { Text($0.rawValue).tag($0) }
+                    }
+
+                    VStack(alignment: .leading) {
+                        HStack {
+                            Text("Lyrics Size")
+                            Spacer()
+                            Text("\(Int(lyricsSize * 100))%").foregroundStyle(.secondary)
+                        }
+                        Slider(value: $lyricsSize, in: 0.7...1.4, step: 0.05)
+                    }
+                } header: {
+                    Text("Appearance")
+                } footer: {
+                    Text("With Liquid Glass off, MHM's own buttons use the classic solid style. The tab bar and menus are drawn by iOS itself and keep their glass look.")
+                }
+
+                Section {
+                    NavigationLink {
+                        EqualizerView()
+                    } label: {
+                        LabeledContent("Equalizer", value: EqualizerSettings.shared.enabled ? EqualizerSettings.shared.presetName : "Off")
+                    }
+                    VStack(alignment: .leading) {
+                        HStack {
+                            Text("Fade Between Songs")
+                            Spacer()
+                            Text(fadeSeconds == 0 ? "Off" : "\(Int(fadeSeconds)) s").foregroundStyle(.secondary)
+                        }
+                        Slider(value: $fadeSeconds, in: 0...10, step: 1)
+                    }
+                } header: {
+                    Text("Playback")
+                } footer: {
+                    Text("Fade lowers the volume at the end of a song and brings it back up at the start of the next one.")
                 }
 
                 Section {
                     ForEach(library.linkedFolders) { folder in
                         HStack {
                             Image(systemName: library.isFolderAvailable(folder) ? "folder.fill" : "exclamationmark.triangle.fill")
-                                .foregroundStyle(library.isFolderAvailable(folder) ? Color.accentColor : .orange)
+                                .foregroundStyle(library.isFolderAvailable(folder) ? AnyShapeStyle(.tint) : AnyShapeStyle(.orange))
                             Text(folder.name)
                             Spacer()
                             Text("\(library.tracks.filter { $0.sourceID == folder.id }.count)")

@@ -25,6 +25,8 @@ final class PlayerEngine {
     private(set) var lyrics: LyricsDocument?
     private(set) var lyricsLoading = false
     private(set) var currentLyricIndex: Int?
+    private(set) var isResolving = false
+    var onlineError: String?
 
     var current: Track? { queue.indices.contains(index) ? queue[index] : nil }
     var upNext: [Track] { index + 1 < queue.count ? Array(queue[(index + 1)...]) : [] }
@@ -52,6 +54,9 @@ final class PlayerEngine {
     @ObservationIgnored private var itemStatusObservation: NSKeyValueObservation?
     @ObservationIgnored private var configured = false
     @ObservationIgnored private var lastPersist = Date.distantPast
+    @ObservationIgnored private var listenedSeconds: Double = 0
+    @ObservationIgnored private var lastTickPosition: Double?
+    @ObservationIgnored private var listeningTrackID: String?
 
     private init() {}
 
@@ -289,7 +294,18 @@ final class PlayerEngine {
 
     // MARK: - Item management
 
+    /// Records the listen for the song that is ending (stats, play counts).
+    private func finishListening() {
+        if let id = listeningTrackID, let track = queue.first(where: { $0.id == id }), track.sourceID != OnlineTrack.sourceID {
+            LibraryStore.shared.recordListen(id, seconds: listenedSeconds, duration: track.duration)
+        }
+        listenedSeconds = 0
+        lastTickPosition = nil
+        listeningTrackID = current?.id
+    }
+
     private func loadCurrent(autoplay: Bool, at time: Double = 0) {
+        finishListening()
         player.removeAllItems()
         queuedNextItem = nil
         queuedNextIndex = nil
@@ -302,7 +318,29 @@ final class PlayerEngine {
             return
         }
 
-        let item = AVPlayerItem(url: LibraryStore.shared.url(for: track))
+        guard let url = playableURL(for: track) else {
+            // Online song: resolve the stream first, then come back here.
+            currentItem = nil
+            isResolving = true
+            currentTime = time
+            trackDidChange()
+            let id = track.id
+            Task {
+                let resolved = await OnlineStreams.shared.resolve(track.relativePath)
+                guard self.current?.id == id else { return }
+                self.isResolving = false
+                if resolved != nil {
+                    self.loadCurrent(autoplay: autoplay, at: time)
+                } else {
+                    self.onlineError = "Couldn't play “\(track.title)”."
+                }
+            }
+            return
+        }
+        isResolving = false
+        onlineError = nil
+        let item = AVPlayerItem(url: url)
+        EQTap.attach(to: item)
         currentItem = item
         player.insert(item, after: nil)
         currentTime = time
@@ -345,7 +383,18 @@ final class PlayerEngine {
         }
         guard let n = nextIndex else { return }
 
-        let item = AVPlayerItem(url: LibraryStore.shared.url(for: queue[n]))
+        guard let url = playableURL(for: queue[n]) else {
+            let nextID = queue[n].id
+            let videoID = queue[n].relativePath
+            Task {
+                _ = await OnlineStreams.shared.resolve(videoID)
+                let upcoming = self.index + 1 < self.queue.count ? self.queue[self.index + 1].id : nil
+                if upcoming == nextID, self.queuedNextItem == nil { self.enqueueNext() }
+            }
+            return
+        }
+        let item = AVPlayerItem(url: url)
+        EQTap.attach(to: item)
         if player.canInsert(item, after: cur) {
             player.insert(item, after: cur)
             queuedNextItem = item
@@ -355,7 +404,6 @@ final class PlayerEngine {
 
     private func itemDidFinish(_ item: AVPlayerItem?) {
         guard let item, item === currentItem else { return }
-        if let t = current { LibraryStore.shared.markPlayed(t.id) }
 
         if sleepAtEndOfTrack {
             sleepAtEndOfTrack = false
@@ -368,7 +416,10 @@ final class PlayerEngine {
             return
         }
         if let n = queuedNextIndex, let nextItem = queuedNextItem {
+            listeningTrackID = current?.id
+            finishListening()
             index = n
+            listeningTrackID = queue.indices.contains(n) ? queue[n].id : nil
             currentItem = nextItem
             queuedNextItem = nil
             queuedNextIndex = nil
@@ -387,7 +438,13 @@ final class PlayerEngine {
 
     private func tick(_ seconds: Double) {
         guard seconds.isFinite, pendingSeek == nil else { return }
+        if isPlaying, let last = lastTickPosition {
+            let delta = seconds - last
+            if delta > 0, delta < 1.5 { listenedSeconds += delta }
+        }
+        lastTickPosition = seconds
         currentTime = seconds
+        applyFade(at: seconds)
         updateLyricIndex()
         if Date().timeIntervalSince(lastPersist) > 10 { persistState() }
     }
@@ -400,9 +457,35 @@ final class PlayerEngine {
         publishExternalState()
     }
 
+    /// Local file URL, or the resolved stream URL for online songs (nil until resolved).
+    private func playableURL(for track: Track) -> URL? {
+        if track.isOnline { return OnlineStreams.shared.cachedURL(track.relativePath) }
+        return LibraryStore.shared.url(for: track)
+    }
+
+    /// Streams the given online songs (they can be downloaded later from the player).
+    func playOnline(_ songs: [OnlineSong], startAt: Int) {
+        play(songs.map(OnlineTrack.make), startAt: startAt, shuffle: false)
+    }
+
+    private func loadRemoteArtwork(for track: Track) {
+        guard let s = track.remoteArtwork, let url = URL(string: s) else { return }
+        let id = track.id
+        Task {
+            let image = await ArtworkCache.shared.remoteImage(url: url, pixelSize: 1200)
+            guard self.current?.id == id, let image else { return }
+            self.currentArtwork = image
+            self.palette = ColorExtractor.palette(from: image)
+            LiveActivityManager.shared.invalidateThumb()
+            self.updateNowPlayingInfo()
+            self.publishExternalState()
+        }
+    }
+
     private func trackDidChange() {
         if let t = current {
             currentArtwork = LibraryStore.shared.artworkImage(for: t)
+            if t.isOnline { loadRemoteArtwork(for: t) }
         } else {
             currentArtwork = nil
         }
@@ -429,6 +512,22 @@ final class PlayerEngine {
         if let fresh = LibraryStore.shared.track(id: id) { queue[index] = fresh }
         loadLyrics()
         publishExternalState()
+    }
+
+    /// "Fade between songs": volume ramps down at the end and up at the start of each song.
+    private func applyFade(at seconds: Double) {
+        guard sleepTimerEnd == nil || player.volume == 1 else { return }
+        let fade = UserDefaults.standard.double(forKey: "fadeSeconds")
+        guard fade > 0 else {
+            if player.volume != 1, sleepTask == nil || sleepTimerEnd == nil { player.volume = 1 }
+            return
+        }
+        let d = duration
+        guard d > fade * 3 else { player.volume = 1; return }
+        var v = 1.0
+        if seconds > d - fade, queuedNextItem != nil { v = (d - seconds) / fade }
+        if seconds < fade { v = min(v, max(seconds / fade, 0.15)) }
+        player.volume = Float(min(max(v, 0.05), 1))
     }
 
     /// Called before a song is deleted from disk.
@@ -511,6 +610,10 @@ final class PlayerEngine {
         currentLyricIndex = nil
         lyricsLoading = false
         guard let t = current else { return }
+        if t.isOnline {
+            if AppSettings.autoLyrics { fetchLyrics(force: true) }
+            return
+        }
         let fresh = LibraryStore.shared.track(id: t.id) ?? t
         if let text = LibraryStore.shared.lyricsText(for: fresh) {
             lyrics = LRCParser.parse(text)
@@ -526,7 +629,16 @@ final class PlayerEngine {
         let id = t.id
         lyricsLoading = true
         Task {
-            let text = await MetadataEnricher.shared.fetchLyrics(for: t, force: force)
+            let text: String?
+            if t.isOnline {
+                if case .found(let found) = await LyricsFetcher.fetch(title: t.title, artist: t.artist, album: t.album, duration: t.duration) {
+                    text = found
+                } else {
+                    text = nil
+                }
+            } else {
+                text = await MetadataEnricher.shared.fetchLyrics(for: t, force: force)
+            }
             guard self.current?.id == id else { return }
             self.lyricsLoading = false
             if let text {
@@ -588,8 +700,10 @@ final class PlayerEngine {
     func publishExternalState() {
         let library = LibraryStore.shared
         func item(_ t: Track) -> WidgetSnapshot.Item {
-            WidgetSnapshot.Item(id: t.id, title: t.title, artist: t.displayArtist,
-                                artworkFile: SharedArtwork.export(t, library: library))
+            let file = t.isOnline
+                ? (t.id == current?.id ? SharedArtwork.export(image: currentArtwork, id: t.id) : nil)
+                : SharedArtwork.export(t, library: library)
+            return WidgetSnapshot.Item(id: t.id, title: t.title, artist: t.displayArtist, artworkFile: file)
         }
         let snapshot = WidgetSnapshot(
             current: current.map(item),
@@ -648,6 +762,18 @@ enum SharedArtwork {
               let data = image.jpegData(compressionQuality: 0.8) else { return nil }
         try? data.write(to: dest, options: .atomic)
         prune(dir)
+        return name
+    }
+
+    /// For streamed songs: writes the in-memory artwork as a thumbnail.
+    @MainActor
+    static func export(image: UIImage?, id: String) -> String? {
+        guard let image, let dir = SharedStore.artworkDirectory else { return nil }
+        let name = id.replacingOccurrences(of: ":", with: "_") + ".jpg"
+        let dest = dir.appendingPathComponent(name)
+        if FileManager.default.fileExists(atPath: dest.path) { return name }
+        guard let data = image.preparingThumbnail(of: CGSize(width: 360, height: 360))?.jpegData(compressionQuality: 0.8) else { return nil }
+        try? data.write(to: dest, options: .atomic)
         return name
     }
 

@@ -35,8 +35,15 @@ struct ArtworkView: View {
                     .strokeBorder(.primary.opacity(0.08), lineWidth: 0.5)
             )
             .task(id: taskKey) {
-                guard let track, track.hasArtwork else { image = nil; return }
-                let loaded = await ArtworkCache.shared.image(for: track.id, pixelSize: pixelSize)
+                guard let track else { image = nil; return }
+                let loaded: UIImage?
+                if track.isOnline, let remote = track.remoteArtwork.flatMap(URL.init(string:)) {
+                    loaded = await ArtworkCache.shared.remoteImage(url: remote, pixelSize: pixelSize)
+                } else if track.hasArtwork {
+                    loaded = await ArtworkCache.shared.image(for: track.id, pixelSize: pixelSize)
+                } else {
+                    loaded = nil
+                }
                 withAnimation(.easeOut(duration: 0.2)) { image = loaded }
             }
     }
@@ -103,7 +110,7 @@ struct TrackRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(track.title)
                     .font(.body)
-                    .foregroundStyle(isCurrent ? Color.accentColor : .primary)
+                    .foregroundStyle(isCurrent ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
                     .lineLimit(1)
                 Text(track.displayArtist)
                     .font(.subheadline)
@@ -126,7 +133,7 @@ struct NowPlayingBars: View {
     var body: some View {
         Image(systemName: "waveform")
             .symbolEffect(.variableColor.iterative.dimInactiveLayers, isActive: animating)
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(.tint)
     }
 }
 
@@ -158,6 +165,24 @@ struct TrackMenuItems: View {
     private var fresh: Track { library.track(id: track.id) ?? track }
 
     var body: some View {
+        if track.isOnline {
+            onlineItems
+        } else {
+            libraryItems
+        }
+    }
+
+    @ViewBuilder private var onlineItems: some View {
+        if showQueueActions {
+            Button { player.playNext(track) } label: { Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") }
+            Button { player.addToQueue(track) } label: { Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward") }
+        }
+        Button { DownloadManager.shared.download(OnlineTrack.song(from: track)) } label: {
+            Label("Download", systemImage: "arrow.down.circle")
+        }
+    }
+
+    @ViewBuilder private var libraryItems: some View {
         if showQueueActions {
             Button { player.playNext(track) } label: { Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") }
             Button { player.addToQueue(track) } label: { Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward") }
@@ -171,6 +196,7 @@ struct TrackMenuItems: View {
         Button { router.trackSheet = .edit(fresh) } label: { Label("Edit Info…", systemImage: "pencil") }
         Button { router.trackSheet = .artwork(fresh) } label: { Label("Find Artwork…", systemImage: "photo.badge.magnifyingglass") }
         Button { router.trackSheet = .lyrics(fresh) } label: { Label("Find Lyrics…", systemImage: "quote.bubble") }
+        Button { router.trackSheet = .move([fresh.id]) } label: { Label("Move to Folder…", systemImage: "folder") }
         Divider()
         Button(role: .destructive) { router.deleteCandidate = fresh } label: { Label("Delete from Library", systemImage: "trash") }
     }
@@ -194,9 +220,8 @@ struct PlayShuffleButtons: View {
             }
         }
         .font(.headline)
-        .buttonStyle(.glass)
+        .adaptiveButton()
         .controlSize(.large)
-        .tint(.accentColor)
         .disabled(tracks.isEmpty)
     }
 }
@@ -237,6 +262,9 @@ extension View {
             case .playlists: PlaylistsView()
             case .playlist(let id): PlaylistDetailView(playlistID: id)
             case .favorites: FavoritesView()
+            case .folder(let source, let path, let title): FolderBrowserView(sourceID: source, path: path, title: title)
+            case .smart(let name): SmartPlaylistView(smart: SmartPlaylist(rawValue: name) ?? .recentlyAdded)
+            case .stats: StatsView()
             }
         }
     }

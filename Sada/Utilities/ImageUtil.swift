@@ -54,6 +54,18 @@ final class ArtworkCache {
         return image
     }
 
+    /// Downloads (and caches) artwork for streamed songs.
+    func remoteImage(url: URL, pixelSize: CGFloat) async -> UIImage? {
+        let key = "\(url.absoluteString)-\(Int(pixelSize))" as NSString
+        if let hit = cache.object(forKey: key) { return hit }
+        guard case let (data, 200)? = await HTTP.get(url) else { return nil }
+        let image = await Task.detached(priority: .userInitiated) {
+            ImageUtil.downsample(data: data, maxPixel: pixelSize)
+        }.value
+        if let image { cache.setObject(image, forKey: key) }
+        return image
+    }
+
     func invalidate(_ trackID: String) {
         // NSCache can't enumerate; sizes used in the app are few, so remove the common ones.
         for size in [80, 120, 132, 200, 300, 360, 400, 480, 600, 800, 1000, 1200] {

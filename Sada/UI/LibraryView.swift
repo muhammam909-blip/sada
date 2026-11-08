@@ -4,6 +4,12 @@ struct LibraryView: View {
     @Environment(LibraryStore.self) private var library
     @State private var showSettings = false
     @State private var importMode: ImportMode?
+    @AppStorage(ThemeKeys.libraryStyle) private var style: LibraryStyle = .folders
+
+    enum LibraryStyle: String, CaseIterable, Identifiable {
+        case folders = "Folders", library = "Library"
+        var id: String { rawValue }
+    }
 
     private let columns = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
 
@@ -11,6 +17,52 @@ struct LibraryView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    Picker("View", selection: $style) {
+                        ForEach(LibraryStyle.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
+                    .padding(.bottom, 10)
+
+                    if style == .folders {
+                        FolderRootsList(importMode: $importMode)
+                        ImportStatusBanner().padding(.top, 12)
+                        quickLinks
+                    } else {
+                        categories
+                    }
+                }
+                .padding(.bottom, 24)
+            }
+            .navigationTitle("Library")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    AddMusicMenu(mode: $importMode)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                }
+            }
+            .refreshable { await library.rescan() }
+            .libraryDestinations()
+            .sheet(isPresented: $showSettings) { SettingsView() }
+            .addMusicImporter($importMode)
+        }
+    }
+
+    private var quickLinks: some View {
+        VStack(spacing: 0) {
+            LibraryCategoryRow(title: "Playlists", icon: "music.note.list", count: library.playlists.count, route: .playlists)
+            Divider().padding(.leading, 52)
+            LibraryCategoryRow(title: "Favorites", icon: "heart", count: library.favorites.count, route: .favorites)
+            Divider().padding(.leading, 52)
+            LibraryCategoryRow(title: "Your Stats", icon: "chart.bar.xaxis", count: library.plays.count, route: .stats)
+        }
+        .padding(.horizontal)
+        .padding(.top, 24)
+    }
+
+    @ViewBuilder private var categories: some View {
                     VStack(spacing: 0) {
                         LibraryCategoryRow(title: "Songs", icon: "music.note", count: library.tracks.count, route: .songs)
                         Divider().padding(.leading, 52)
@@ -21,6 +73,8 @@ struct LibraryView: View {
                         LibraryCategoryRow(title: "Playlists", icon: "music.note.list", count: library.playlists.count, route: .playlists)
                         Divider().padding(.leading, 52)
                         LibraryCategoryRow(title: "Favorites", icon: "heart", count: library.favorites.count, route: .favorites)
+                        Divider().padding(.leading, 52)
+                        LibraryCategoryRow(title: "Your Stats", icon: "chart.bar.xaxis", count: library.plays.count, route: .stats)
                     }
                     .padding(.horizontal)
 
@@ -42,23 +96,6 @@ struct LibraryView: View {
                         }
                         .padding(.horizontal)
                     }
-                }
-                .padding(.bottom, 24)
-            }
-            .navigationTitle("Library")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    AddMusicMenu(mode: $importMode)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showSettings = true } label: { Image(systemName: "gearshape") }
-                }
-            }
-            .refreshable { await library.rescan() }
-            .libraryDestinations()
-            .sheet(isPresented: $showSettings) { SettingsView() }
-            .addMusicImporter($importMode)
-        }
     }
 }
 

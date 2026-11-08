@@ -71,7 +71,7 @@ struct ArtworkSearchSheet: View {
                             .submitLabel(.search)
                             .onSubmit { Task { await search() } }
                         Button("Search") { Task { await search() } }
-                            .buttonStyle(.glass)
+                            .adaptiveButton()
                     }
                     PhotosPicker(selection: $photo, matching: .images) {
                         Label("Choose from Photos", systemImage: "photo.on.rectangle")
@@ -201,7 +201,7 @@ struct LyricsSearchSheet: View {
                                             Text("SYNCED")
                                                 .font(.caption2.weight(.bold))
                                                 .padding(.horizontal, 6).padding(.vertical, 2)
-                                                .background(Color.accentColor.opacity(0.2), in: Capsule())
+                                                .background(.tint.opacity(0.2), in: Capsule())
                                                 .foregroundStyle(.tint)
                                         }
                                     }
