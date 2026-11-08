@@ -1,0 +1,100 @@
+name: Sada
+options:
+  bundleIdPrefix: com.hammam
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+    TARGETED_DEVICE_FAMILY: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    GENERATE_INFOPLIST_FILE: NO
+
+targets:
+  Sada:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sada
+      - path: Shared
+    dependencies:
+      - target: SadaWidgets
+        embed: true
+    scheme: {}
+    entitlements:
+      path: Sada/Sada.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.hammam.sada
+    info:
+      path: Sada/Info.plist
+      properties:
+        CFBundleDisplayName: Sada
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIBackgroundModes:
+          - audio
+        NSSupportsLiveActivities: true
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: false
+        ALTAppGroups:
+          - group.com.hammam.sada
+        CFBundleURLTypes:
+          - CFBundleURLName: com.hammam.sada
+            CFBundleURLSchemes:
+              - sada
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Audio
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.audio
+              - public.mp3
+              - public.mpeg-4-audio
+              - com.apple.m4a-audio
+              - org.xiph.flac
+              - com.microsoft.waveform-audio
+              - public.aiff-audio
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hammam.sada
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+
+  SadaWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: SadaWidgets
+      - path: Shared
+    entitlements:
+      path: SadaWidgets/SadaWidgets.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.hammam.sada
+    info:
+      path: SadaWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: Sada
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ALTAppGroups:
+          - group.com.hammam.sada
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hammam.sada.widgets
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) WIDGET_EXTENSION
+        LD_RUNPATH_SEARCH_PATHS: $(inherited) @executable_path/Frameworks @executable_path/../../Frameworks

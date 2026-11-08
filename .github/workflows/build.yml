@@ -1,0 +1,93 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest Xcode
+        run: |
+          ls -d /Applications/Xcode*.app
+          XC=$(ls -d /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -1)
+          echo "Using $XC"
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
+
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Build (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild -project Sada.xcodeproj -scheme Sada -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            build 2>&1 | tee build.log | grep -E "error:|warning: .*deprecated|BUILD (SUCCEEDED|FAILED)" || true
+          grep -q "BUILD SUCCEEDED" build.log || { echo "---- errors ----"; grep -E "error:" build.log | sort -u | head -80; exit 1; }
+
+      - name: Package IPA (ad-hoc sign with entitlements so SideStore keeps the App Group)
+        run: |
+          APP=build/Build/Products/Release-iphoneos/Sada.app
+          codesign --force --sign - --entitlements SadaWidgets/SadaWidgets.entitlements "$APP/PlugIns/SadaWidgets.appex"
+          codesign --force --sign - --entitlements Sada/Sada.entitlements "$APP"
+          rm -rf Payload && mkdir Payload && cp -R "$APP" Payload/
+          zip -qry Sada.ipa Payload
+          ls -lh Sada.ipa
+
+      - name: Make SideStore source
+        run: |
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Payload/Sada.app/Info.plist)
+          SIZE=$(stat -f%z Sada.ipa)
+          REPO="${{ github.repository }}"
+          cat > source.json <<EOF
+          {
+            "name": "Sada",
+            "identifier": "com.hammam.sada.source",
+            "apps": [{
+              "name": "Sada",
+              "bundleIdentifier": "com.hammam.sada",
+              "developerName": "Hammam",
+              "subtitle": "Music player",
+              "localizedDescription": "Personal music player with synced lyrics, auto artwork, widgets and Dynamic Island.",
+              "iconURL": "https://raw.githubusercontent.com/${REPO}/main/Sada/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
+              "tintColor": "FF3764",
+              "versions": [{
+                "version": "${VERSION}",
+                "buildVersion": "${{ github.run_number }}",
+                "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+                "downloadURL": "https://github.com/${REPO}/releases/download/build-${{ github.run_number }}/Sada.ipa",
+                "size": ${SIZE},
+                "minOSVersion": "26.0"
+              }]
+            }],
+            "news": []
+          }
+          EOF
+          cat source.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Sada-ipa
+          path: Sada.ipa
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Sada build ${{ github.run_number }}
+          make_latest: true
+          files: |
+            Sada.ipa
+            source.json
