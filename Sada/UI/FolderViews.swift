@@ -63,11 +63,12 @@ struct FolderRootRow: View {
     }
 }
 
-/// One folder: its subfolders and songs, with move / delete / rename / new folder.
+/// One folder: its subfolders and songs. Select songs *and* folders to move or delete them.
 struct FolderBrowserView: View {
     let sourceID: String?
     let path: String
     let title: String
+    var isRoot = false
 
     @Environment(LibraryStore.self) private var library
     @Environment(PlayerEngine.self) private var player
@@ -80,9 +81,13 @@ struct FolderBrowserView: View {
     @State private var renameText = ""
     @State private var deletingFolder: String?
     @State private var confirmDeleteSelected = false
-    @AppStorage("folderShowFileNames") private var showFileNames = false
 
+    private static let folderTag = "folder:"
     private func childPath(_ name: String) -> String { path.isEmpty ? name : path + "/" + name }
+    private var selectedFolders: [String] {
+        selection.filter { $0.hasPrefix(Self.folderTag) }.map { String($0.dropFirst(Self.folderTag.count)) }
+    }
+    private var selectedTracks: [String] { selection.filter { !$0.hasPrefix(Self.folderTag) } }
 
     var body: some View {
         let _ = library.folderRevision
@@ -93,7 +98,9 @@ struct FolderBrowserView: View {
             if !all.isEmpty && !editMode.isEditing {
                 PlayShuffleButtons(tracks: all)
                     .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 12, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+                ImportStatusBanner()
+                    .listRowSeparator(.hidden)
             }
 
             if !listing.folders.isEmpty {
@@ -101,28 +108,22 @@ struct FolderBrowserView: View {
                     ForEach(listing.folders, id: \.self) { name in
                         let sub = childPath(name)
                         NavigationLink(value: Route.folder(source: sourceID, path: sub, title: name)) {
-                            HStack(spacing: 14) {
-                                Image(systemName: "folder.fill").font(.title2).foregroundStyle(.tint).frame(width: 36)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(name).lineLimit(1)
-                                    Text("\(library.tracksRecursive(sourceID: sourceID, path: sub).count) songs")
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
+                            FolderRow(name: name, count: library.tracksRecursive(sourceID: sourceID, path: sub).count)
                         }
-                        .selectionDisabled()
+                        .tag(Self.folderTag + sub)
                         .contextMenu {
                             let songs = library.tracksRecursive(sourceID: sourceID, path: sub)
                             Button { player.play(songs, startAt: 0, shuffle: false) } label: { Label("Play", systemImage: "play") }
                             Button { player.shuffleAll(songs) } label: { Label("Shuffle", systemImage: "shuffle") }
                             Divider()
+                            Button { router.trackSheet = .moveItems(tracks: [], folders: [sub], source: sourceID) } label: { Label("Move to…", systemImage: "folder") }
                             Button { renameText = name; renamingFolder = sub } label: { Label("Rename", systemImage: "pencil") }
                             Button(role: .destructive) { deletingFolder = sub } label: { Label("Delete Folder", systemImage: "trash") }
                         }
                         .swipeActions {
                             Button(role: .destructive) { deletingFolder = sub } label: { Label("Delete", systemImage: "trash") }
-                            Button { renameText = name; renamingFolder = sub } label: { Label("Rename", systemImage: "pencil") }
-                                .tint(.orange)
+                            Button { router.trackSheet = .moveItems(tracks: [], folders: [sub], source: sourceID) } label: { Label("Move", systemImage: "folder") }
+                                .tint(.indigo)
                         }
                     }
                 }
@@ -131,7 +132,7 @@ struct FolderBrowserView: View {
             if !listing.tracks.isEmpty {
                 Section {
                     ForEach(Array(listing.tracks.enumerated()), id: \.element.id) { i, track in
-                        FileTrackRow(track: track, showFileName: showFileNames)
+                        FileTrackRow(track: track)
                             .tag(track.id)
                             .contentShape(Rectangle())
                             .onTapGesture {
@@ -143,6 +144,31 @@ struct FolderBrowserView: View {
                                 Button { router.trackSheet = .move([track.id]) } label: { Label("Move", systemImage: "folder") }
                                     .tint(.indigo)
                             }
+                            .swipeActions(edge: .leading) {
+                                Button { player.playNext(track) } label: { Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") }
+                                    .tint(.orange)
+                            }
+                    }
+                }
+            }
+
+            if isRoot && !library.linkedFolders.isEmpty && !editMode.isEditing {
+                Section("Linked Folders") {
+                    ForEach(library.linkedFolders) { folder in
+                        NavigationLink(value: Route.folder(source: folder.id, path: "", title: folder.name)) {
+                            HStack(spacing: 14) {
+                                Image(systemName: "folder.fill.badge.gearshape")
+                                    .font(.title2).foregroundStyle(.tint).frame(width: 36)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(folder.name).lineLimit(1)
+                                    Text(library.isFolderAvailable(folder)
+                                         ? "\(library.tracks.filter { $0.sourceID == folder.id }.count) songs · linked"
+                                         : "Unavailable")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .selectionDisabled()
                     }
                 }
             }
@@ -155,16 +181,19 @@ struct FolderBrowserView: View {
         }
         .listStyle(.plain)
         .environment(\.editMode, $editMode)
+        .animation(.snappy, value: listing.folders)
+        .animation(.snappy, value: listing.tracks.map(\.id))
         .navigationTitle(title)
+        .refreshable { await library.rescan() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if editMode.isEditing {
                     Button("Done") { withAnimation { editMode = .inactive; selection.removeAll() } }
+                        .fontWeight(.semibold)
                 } else {
                     Menu {
-                        Button { withAnimation { editMode = .active } } label: { Label("Select Songs", systemImage: "checkmark.circle") }
+                        Button { withAnimation { editMode = .active } } label: { Label("Select", systemImage: "checkmark.circle") }
                         Button { newFolderName = ""; askNewFolder = true } label: { Label("New Folder", systemImage: "folder.badge.plus") }
-                        Toggle(isOn: $showFileNames) { Label("Show File Names", systemImage: "doc.text") }
                     } label: {
                         Image(systemName: "ellipsis")
                     }
@@ -172,9 +201,19 @@ struct FolderBrowserView: View {
             }
             ToolbarItemGroup(placement: .bottomBar) {
                 if editMode.isEditing {
-                    Button("Select All") { selection = Set(listing.tracks.map(\.id)) }
+                    Button(selection.isEmpty ? "Select All" : "Deselect") {
+                        if selection.isEmpty {
+                            selection = Set(listing.tracks.map(\.id) + listing.folders.map { Self.folderTag + childPath($0) })
+                        } else {
+                            selection.removeAll()
+                        }
+                    }
                     Spacer()
-                    Button { router.trackSheet = .move(Array(selection)) } label: { Label("Move", systemImage: "folder") }
+                    Text(selection.isEmpty ? "" : "\(selection.count) selected").font(.footnote).foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        router.trackSheet = .moveItems(tracks: selectedTracks, folders: selectedFolders, source: sourceID)
+                    } label: { Label("Move", systemImage: "folder") }
                         .disabled(selection.isEmpty)
                     Button(role: .destructive) { confirmDeleteSelected = true } label: { Label("Delete", systemImage: "trash") }
                         .disabled(selection.isEmpty)
@@ -206,25 +245,42 @@ struct FolderBrowserView: View {
         } message: {
             Text("The files are removed from your iPhone. This can't be undone.")
         }
-        .confirmationDialog("Delete \(selection.count) songs?", isPresented: $confirmDeleteSelected, titleVisibility: .visible) {
+        .confirmationDialog("Delete \(selection.count) selected items?", isPresented: $confirmDeleteSelected, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
-                for id in selection { if let t = library.track(id: id) { library.delete(t) } }
+                for id in selectedTracks { if let t = library.track(id: id) { library.delete(t) } }
+                for folder in selectedFolders { library.deleteFolder(sourceID: sourceID, path: folder) }
                 selection.removeAll()
                 editMode = .inactive
             }
         } message: {
-            Text("The files are removed from your iPhone. This can't be undone.")
+            Text("Selected songs and folders (with everything inside) are removed from your iPhone. This can't be undone.")
         }
         .onChange(of: router.trackSheet == nil) { _, closed in
-            // After a move finishes, leave selection mode.
             if closed && editMode.isEditing { selection.removeAll(); editMode = .inactive }
+        }
+    }
+}
+
+struct FolderRow: View {
+    let name: String
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "folder.fill")
+                .font(.title2)
+                .foregroundStyle(.tint)
+                .frame(width: 36)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name).lineLimit(1)
+                Text(count == 1 ? "1 song" : "\(count) songs").font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 }
 
 struct FileTrackRow: View {
     let track: Track
-    var showFileName = false
     @Environment(PlayerEngine.self) private var player
 
     var body: some View {
@@ -239,7 +295,7 @@ struct FileTrackRow: View {
                     }
                 }
             VStack(alignment: .leading, spacing: 2) {
-                Text(showFileName ? (track.relativePath as NSString).lastPathComponent : track.title)
+                Text(track.title)
                     .foregroundStyle(isCurrent ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
                     .lineLimit(1)
                 Text("\(track.displayArtist) · \(formatTime(track.duration))")
@@ -254,6 +310,8 @@ struct FileTrackRow: View {
 
 struct MoveToFolderSheet: View {
     let trackIDs: [String]
+    var folderPaths: [String] = []
+    var folderSource: String? = nil
     @Environment(LibraryStore.self) private var library
     @Environment(\.dismiss) private var dismiss
     @State private var folders: [(sourceID: String?, path: String, name: String)] = []
@@ -263,7 +321,10 @@ struct MoveToFolderSheet: View {
             List {
                 ForEach(Array(folders.enumerated()), id: \.offset) { _, folder in
                     Button {
-                        library.move(trackIDs, toSource: folder.sourceID, folder: folder.path)
+                        if !trackIDs.isEmpty { library.move(trackIDs, toSource: folder.sourceID, folder: folder.path) }
+                        for path in folderPaths {
+                            library.moveFolder(sourceID: folderSource, path: path, toSource: folder.sourceID, folder: folder.path)
+                        }
                         dismiss()
                     } label: {
                         Label(folder.name, systemImage: folder.path.isEmpty ? "internaldrive" : "folder")
@@ -272,12 +333,17 @@ struct MoveToFolderSheet: View {
                     }
                 }
             }
-            .navigationTitle(trackIDs.count == 1 ? "Move Song" : "Move \(trackIDs.count) Songs")
+            .navigationTitle("Move \(trackIDs.count + folderPaths.count) Item\(trackIDs.count + folderPaths.count == 1 ? "" : "s")")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             }
-            .task { folders = library.allFolders() }
+            .task {
+                // Hide the folders being moved (and their subfolders) as destinations.
+                folders = library.allFolders().filter { f in
+                    !(f.sourceID == folderSource && folderPaths.contains { f.path == $0 || f.path.hasPrefix($0 + "/") })
+                }
+            }
         }
     }
 }

@@ -16,7 +16,7 @@ struct RootView: View {
             Tab("Library", systemImage: "square.stack.fill", value: AppTab.library) {
                 LibraryView()
             }
-            Tab("Online", systemImage: "globe", value: AppTab.online) {
+            Tab("Online", systemImage: "dot.radiowaves.left.and.right", value: AppTab.online) {
                 OnlineView()
             }
             Tab("Search", systemImage: "magnifyingglass", value: AppTab.search, role: .search) {
@@ -44,11 +44,22 @@ struct MiniPlayerView: View {
 
     @Environment(PlayerEngine.self) private var player
     @Environment(\.tabViewBottomAccessoryPlacement) private var placement
+    @State private var dragX: CGFloat = 0
 
     var body: some View {
         HStack(spacing: 12) {
             ArtworkView(track: player.current, cornerRadius: 6, pixelSize: 120)
                 .frame(width: 34, height: 34)
+                .overlay(alignment: .bottomTrailing) {
+                    if player.current?.isOnline == true {
+                        Image(systemName: "icloud.fill")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(2)
+                            .background(.tint, in: Circle())
+                            .offset(x: 3, y: 3)
+                    }
+                }
             VStack(alignment: .leading, spacing: 0) {
                 Text(player.current?.title ?? "Not Playing")
                     .font(.subheadline.weight(.medium))
@@ -82,8 +93,29 @@ struct MiniPlayerView: View {
         .buttonStyle(.plain)
         .padding(.leading, 10)
         .padding(.trailing, 8)
+        .offset(x: dragX)
+        .opacity(1 - min(abs(dragX) / 250, 0.6))
         .contentShape(Rectangle())
         .onTapGesture { if player.current != nil { onOpen() } }
+        // Swipe left = next, right = previous, up = open the player.
+        .gesture(
+            DragGesture(minimumDistance: 14)
+                .onChanged { g in
+                    if abs(g.translation.width) > abs(g.translation.height) { dragX = g.translation.width * 0.6 }
+                }
+                .onEnded { g in
+                    if g.translation.height < -30, abs(g.translation.height) > abs(g.translation.width) {
+                        if player.current != nil { onOpen() }
+                    } else if g.translation.width < -70 {
+                        player.next()
+                    } else if g.translation.width > 70 {
+                        player.previous()
+                    }
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { dragX = 0 }
+                }
+        )
+        .sensoryFeedback(.selection, trigger: player.current?.id)
+        .animation(.smooth, value: player.current?.id)
     }
 }
 
@@ -112,6 +144,7 @@ struct TrackActionSheets: ViewModifier {
                 case .lyrics(let t): LyricsSearchSheet(track: t)
                 case .addToPlaylist(let t): PlaylistPickerSheet(track: t)
                 case .move(let ids): MoveToFolderSheet(trackIDs: ids)
+                case .moveItems(let t, let f, let s): MoveToFolderSheet(trackIDs: t, folderPaths: f, folderSource: s)
                 case .addSongs(let p): AddSongsSheet(playlistID: p)
                 }
             }

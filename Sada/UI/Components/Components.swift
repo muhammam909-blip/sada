@@ -180,6 +180,7 @@ struct TrackMenuItems: View {
         Button { DownloadManager.shared.download(OnlineTrack.song(from: track)) } label: {
             Label("Download", systemImage: "arrow.down.circle")
         }
+        Button { player.startRadio(for: track) } label: { Label("Start Radio", systemImage: "dot.radiowaves.left.and.right") }
     }
 
     @ViewBuilder private var libraryItems: some View {
@@ -188,6 +189,7 @@ struct TrackMenuItems: View {
             Button { player.addToQueue(track) } label: { Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward") }
             Divider()
         }
+        Button { player.startRadio(for: track) } label: { Label("Start Radio", systemImage: "dot.radiowaves.left.and.right") }
         Button { library.toggleFavorite(track.id) } label: {
             Label(fresh.isFavorite ? "Remove from Favorites" : "Favorite", systemImage: fresh.isFavorite ? "heart.slash" : "heart")
         }

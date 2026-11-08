@@ -3,7 +3,7 @@ import Foundation
 import Observation
 import YouTubeKit
 
-struct OnlineSong: Identifiable, Hashable {
+struct OnlineSong: Identifiable, Hashable, Codable {
     let id: String // YouTube video id
     let title: String
     let artist: String
@@ -113,7 +113,7 @@ enum YTMusicSearch {
         return renderers.compactMap(parse).filter { seen.insert($0.id).inserted }
     }
 
-    private static func collect(_ node: Any, key: String, into out: inout [[String: Any]]) {
+    static func collect(_ node: Any, key: String, into out: inout [[String: Any]]) {
         if let dict = node as? [String: Any] {
             if let match = dict[key] as? [String: Any] { out.append(match); return }
             for value in dict.values { collect(value, key: key, into: &out) }
@@ -122,7 +122,7 @@ enum YTMusicSearch {
         }
     }
 
-    private static func runs(_ r: [String: Any], column: Int) -> [String] {
+    static func runs(_ r: [String: Any], column: Int) -> [String] {
         guard let cols = r["flexColumns"] as? [[String: Any]], cols.indices.contains(column),
               let col = cols[column]["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any],
               let text = col["text"] as? [String: Any],
@@ -130,7 +130,7 @@ enum YTMusicSearch {
         return runs.compactMap { $0["text"] as? String }
     }
 
-    private static func parse(_ r: [String: Any]) -> OnlineSong? {
+    static func parse(_ r: [String: Any]) -> OnlineSong? {
         var videoID = (r["playlistItemData"] as? [String: Any])?["videoId"] as? String
         if videoID == nil {
             var endpoints: [[String: Any]] = []
@@ -200,18 +200,15 @@ final class DownloadManager {
         let library = LibraryStore.shared
         do {
             // 1. Best AAC audio stream (.m4a plays natively on iPhone).
-            let streams = try await YouTube(videoID: song.id).streams
-            let audio = streams.filterAudioOnly()
-            guard let stream = audio.filter({ $0.fileExtension == .m4a }).highestAudioBitrateStream()
-                    ?? audio.highestAudioBitrateStream() else {
+            guard let streamURL = await OnlineStreams.shared.resolve(song.id) else {
                 states[song.id] = .failed("No audio stream")
                 return
             }
 
-            // 2. Download with progress.
+            // 2. Download (parallel chunks = much faster than one request).
             states[song.id] = .downloading(0)
             let id = song.id
-            let temp = try await FileDownloader.download(stream.url) { progress in
+            let temp = try await FileDownloader.download(streamURL) { progress in
                 Task { @MainActor in DownloadManager.shared.states[id] = .downloading(progress) }
             }
             states[song.id] = .finishing
@@ -304,7 +301,75 @@ enum FileDownloader {
         }
     }
 
+    /// Downloads in 1 MB ranges, 4 at a time (YouTube throttles single long requests).
     static func download(_ url: URL, onProgress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+        if let total = await contentLength(url), total > 0 {
+            if let file = try? await chunked(url, total: total, onProgress: onProgress) { return file }
+        }
+        return try await single(url, onProgress: onProgress)
+    }
+
+    private static func contentLength(_ url: URL) async -> Int64? {
+        var request = URLRequest(url: url)
+        request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
+        guard case let (_, response)? = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse,
+              let range = http.value(forHTTPHeaderField: "Content-Range"),
+              let totalText = range.split(separator: "/").last else { return nil }
+        return Int64(totalText)
+    }
+
+    private static func chunked(_ url: URL, total: Int64, onProgress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+        let chunk: Int64 = 1_048_576
+        let ranges = stride(from: Int64(0), to: total, by: Int(chunk)).map { ($0, min($0 + chunk - 1, total - 1)) }
+        let counter = ProgressCounter(total: total, onProgress: onProgress)
+        var parts = [Int: Data]()
+        try await withThrowingTaskGroup(of: (Int, Data).self) { group in
+            var next = 0
+            func addTask() {
+                guard next < ranges.count else { return }
+                let i = next
+                let (start, end) = ranges[i]
+                next += 1
+                group.addTask {
+                    var request = URLRequest(url: url)
+                    request.setValue("bytes=\(start)-\(end)", forHTTPHeaderField: "Range")
+                    let (data, response) = try await URLSession.shared.data(for: request)
+                    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                        throw URLError(.badServerResponse)
+                    }
+                    await counter.add(Int64(data.count))
+                    return (i, data)
+                }
+            }
+            for _ in 0..<4 { addTask() }
+            while let result = try await group.next() {
+                parts[result.0] = result.1
+                addTask()
+            }
+        }
+        var file = Data(capacity: Int(total))
+        for i in 0..<ranges.count {
+            guard let part = parts[i] else { throw URLError(.cannotDecodeContentData) }
+            file.append(part)
+        }
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".m4a")
+        try file.write(to: temp)
+        return temp
+    }
+
+    private actor ProgressCounter {
+        let total: Int64
+        var done: Int64 = 0
+        let onProgress: @Sendable (Double) -> Void
+        init(total: Int64, onProgress: @escaping @Sendable (Double) -> Void) { self.total = total; self.onProgress = onProgress }
+        func add(_ n: Int64) {
+            done += n
+            onProgress(Double(done) / Double(total))
+        }
+    }
+
+    private static func single(_ url: URL, onProgress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         let delegate = Delegate(onProgress: onProgress)
         let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
         return try await withCheckedThrowingContinuation { continuation in

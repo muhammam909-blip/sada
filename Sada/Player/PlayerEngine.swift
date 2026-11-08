@@ -339,6 +339,7 @@ final class PlayerEngine {
         }
         isResolving = false
         onlineError = nil
+        if track.isOnline { OnlineFeed.shared.noteStreamed(OnlineTrack.song(from: track)) }
         let item = AVPlayerItem(url: url)
         EQTap.attach(to: item)
         currentItem = item
@@ -464,8 +465,38 @@ final class PlayerEngine {
     }
 
     /// Streams the given online songs (they can be downloaded later from the player).
+    /// Songs you already have are played from your iPhone instead of streamed.
     func playOnline(_ songs: [OnlineSong], startAt: Int) {
-        play(songs.map(OnlineTrack.make), startAt: startAt, shuffle: false)
+        let library = LibraryStore.shared
+        let tracks = songs.map { library.localTrack(title: $0.title, artist: $0.artist) ?? OnlineTrack.make($0) }
+        play(tracks, startAt: startAt, shuffle: false)
+    }
+
+    /// Endless queue of songs similar to this one (YouTube Music radio).
+    func startRadio(from song: OnlineSong) {
+        playOnline([song], startAt: 0)
+        Task {
+            guard let related = try? await YTMusic.radio(videoID: song.id), related.count > 1 else { return }
+            guard self.current?.id == "yt:\(song.id)" || self.current?.title == song.title else { return }
+            let library = LibraryStore.shared
+            let extra = related.dropFirst().map { library.localTrack(title: $0.title, artist: $0.artist) ?? OnlineTrack.make($0) }
+            self.queue.append(contentsOf: extra)
+            self.originalQueue.append(contentsOf: extra)
+            self.enqueueNext()
+            self.publishExternalState()
+        }
+    }
+
+    /// Radio for a song in your library: finds it online first.
+    func startRadio(for track: Track) {
+        if track.isOnline { startRadio(from: OnlineTrack.song(from: track)); return }
+        Task {
+            guard let match = try? await YTMusicSearch.search("\(track.displayArtist) \(track.title)").first,
+                  let related = try? await YTMusic.radio(videoID: match.id) else { return }
+            let library = LibraryStore.shared
+            let rest = related.dropFirst().map { library.localTrack(title: $0.title, artist: $0.artist) ?? OnlineTrack.make($0) }
+            self.play([track] + rest, startAt: 0, shuffle: false)
+        }
     }
 
     private func loadRemoteArtwork(for track: Track) {

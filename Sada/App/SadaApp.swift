@@ -53,6 +53,7 @@ enum TrackSheet: Identifiable {
     case lyrics(Track)
     case addToPlaylist(Track)
     case move([String])
+    case moveItems(tracks: [String], folders: [String], source: String?)
     case addSongs(playlistID: String?) // nil = Favorites
 
     var id: String {
@@ -62,6 +63,7 @@ enum TrackSheet: Identifiable {
         case .lyrics(let t): "lyr-\(t.id)"
         case .addToPlaylist(let t): "pl-\(t.id)"
         case .move(let ids): "move-\(ids.joined(separator: ","))"
+        case .moveItems(let t, let f, _): "moveitems-\(t.count)-\(f.joined(separator: ","))"
         case .addSongs(let p): "add-\(p ?? "fav")"
         }
     }

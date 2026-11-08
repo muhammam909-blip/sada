@@ -4,32 +4,59 @@ struct LibraryView: View {
     @Environment(LibraryStore.self) private var library
     @State private var showSettings = false
     @State private var importMode: ImportMode?
-    @AppStorage(ThemeKeys.libraryStyle) private var style: LibraryStyle = .folders
-
-    enum LibraryStyle: String, CaseIterable, Identifiable {
-        case folders = "Folders", library = "Library"
-        var id: String { rawValue }
-    }
 
     private let columns = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
+
+    /// Albums in the order you last played them.
+    private var recentlyPlayedAlbums: [Album] {
+        var seen = Set<String>()
+        var out: [Album] = []
+        for t in library.recentlyPlayed where seen.insert(t.albumID).inserted {
+            if let a = library.album(id: t.albumID) { out.append(a) }
+            if out.count >= 30 { break }
+        }
+        return out
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Picker("View", selection: $style) {
-                        ForEach(LibraryStyle.allCases) { Text($0.rawValue).tag($0) }
+                    VStack(spacing: 0) {
+                        LibraryCategoryRow(title: "Playlists", icon: "music.note.list", count: library.playlists.count, route: .playlists)
+                        Divider().padding(.leading, 52)
+                        LibraryCategoryRow(title: "Favorites", icon: "heart", count: library.favorites.count, route: .favorites)
+                        Divider().padding(.leading, 52)
+                        LibraryCategoryRow(title: "Artists", icon: "music.microphone", count: library.artists.count, route: .artists)
+                        Divider().padding(.leading, 52)
+                        LibraryCategoryRow(title: "Albums", icon: "square.stack", count: library.albums.count, route: .albums)
+                        Divider().padding(.leading, 52)
+                        LibraryCategoryRow(title: "Songs", icon: "music.note", count: library.tracks.count, route: .songs)
+                        Divider().padding(.leading, 52)
+                        LibraryCategoryRow(title: "Your Stats", icon: "chart.bar.xaxis", count: library.plays.count, route: .stats)
                     }
-                    .pickerStyle(.segmented)
                     .padding(.horizontal)
-                    .padding(.bottom, 10)
 
-                    if style == .folders {
-                        FolderRootsList(importMode: $importMode)
-                        ImportStatusBanner().padding(.top, 12)
-                        quickLinks
+                    let recent = recentlyPlayedAlbums
+                    Text("Recently Played")
+                        .font(.title2.bold())
+                        .padding(.horizontal)
+                        .padding(.top, 28)
+                        .padding(.bottom, 12)
+                    if recent.isEmpty {
+                        Text("Albums you play will show up here.")
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal)
                     } else {
-                        categories
+                        LazyVGrid(columns: columns, spacing: 20) {
+                            ForEach(recent) { album in
+                                NavigationLink(value: Route.album(album.id)) {
+                                    AlbumCard(album: album)
+                                }
+                                .buttonStyle(PressableStyle())
+                            }
+                        }
+                        .padding(.horizontal)
                     }
                 }
                 .padding(.bottom, 24)
@@ -37,68 +64,14 @@ struct LibraryView: View {
             .navigationTitle("Library")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    AddMusicMenu(mode: $importMode)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
                 }
             }
-            .refreshable { await library.rescan() }
             .libraryDestinations()
             .sheet(isPresented: $showSettings) { SettingsView() }
-            .addMusicImporter($importMode)
         }
-    }
-
-    private var quickLinks: some View {
-        VStack(spacing: 0) {
-            LibraryCategoryRow(title: "Playlists", icon: "music.note.list", count: library.playlists.count, route: .playlists)
-            Divider().padding(.leading, 52)
-            LibraryCategoryRow(title: "Favorites", icon: "heart", count: library.favorites.count, route: .favorites)
-            Divider().padding(.leading, 52)
-            LibraryCategoryRow(title: "Your Stats", icon: "chart.bar.xaxis", count: library.plays.count, route: .stats)
-        }
-        .padding(.horizontal)
-        .padding(.top, 24)
-    }
-
-    @ViewBuilder private var categories: some View {
-                    VStack(spacing: 0) {
-                        LibraryCategoryRow(title: "Songs", icon: "music.note", count: library.tracks.count, route: .songs)
-                        Divider().padding(.leading, 52)
-                        LibraryCategoryRow(title: "Albums", icon: "square.stack", count: library.albums.count, route: .albums)
-                        Divider().padding(.leading, 52)
-                        LibraryCategoryRow(title: "Artists", icon: "music.microphone", count: library.artists.count, route: .artists)
-                        Divider().padding(.leading, 52)
-                        LibraryCategoryRow(title: "Playlists", icon: "music.note.list", count: library.playlists.count, route: .playlists)
-                        Divider().padding(.leading, 52)
-                        LibraryCategoryRow(title: "Favorites", icon: "heart", count: library.favorites.count, route: .favorites)
-                        Divider().padding(.leading, 52)
-                        LibraryCategoryRow(title: "Your Stats", icon: "chart.bar.xaxis", count: library.plays.count, route: .stats)
-                    }
-                    .padding(.horizontal)
-
-                    ImportStatusBanner().padding(.top, 12)
-
-                    if !library.albums.isEmpty {
-                        Text("Recently Added")
-                            .font(.title2.bold())
-                            .padding(.horizontal)
-                            .padding(.top, 28)
-                            .padding(.bottom, 12)
-                        LazyVGrid(columns: columns, spacing: 20) {
-                            ForEach(library.recentlyAddedAlbums.prefix(30)) { album in
-                                NavigationLink(value: Route.album(album.id)) {
-                                    AlbumCard(album: album)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(.horizontal)
-                    }
     }
 }
-
 struct LibraryCategoryRow: View {
     let title: String
     let icon: String

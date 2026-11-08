@@ -1,61 +1,37 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// Home = the files in On My iPhone › MHM, shown as folders (nPlayer style).
 struct HomeView: View {
     @Environment(LibraryStore.self) private var library
-    @Environment(PlayerEngine.self) private var player
     @State private var importMode: ImportMode?
     @State private var showSettings = false
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                if library.tracks.isEmpty {
-                    EmptyLibraryView(importMode: $importMode)
-                        .padding(.top, 80)
-                } else {
-                    VStack(alignment: .leading, spacing: 30) {
-                        PlayShuffleButtons(tracks: library.tracks)
-                            .padding(.horizontal)
-
-                        ImportStatusBanner()
-
-                        AlbumShelf(title: "Recently Added", albums: Array(library.recentlyAddedAlbums.prefix(16)))
-
-                        let recent = Array(library.recentlyPlayed.prefix(12))
-                        if !recent.isEmpty {
-                            TrackShelf(title: "Recently Played", tracks: recent)
-                        }
-
-                        let top = Array(library.mostPlayed.prefix(12))
-                        if !top.isEmpty {
-                            TrackShelf(title: "On Repeat", tracks: top)
-                        }
-
-                        if library.artists.count > 1 {
-                            ArtistShelf(artists: Array(library.artists.sorted { $0.tracks.count > $1.tracks.count }.prefix(12)))
-                        }
+            Group {
+                if library.tracks.isEmpty && library.linkedFolders.isEmpty && !library.isScanning {
+                    ScrollView {
+                        EmptyLibraryView(importMode: $importMode).padding(.top, 80)
                     }
-                    .padding(.vertical)
+                } else {
+                    FolderBrowserView(sourceID: nil, path: "", title: "On My iPhone", isRoot: true)
                 }
             }
-            .navigationTitle("Home")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     AddMusicMenu(mode: $importMode)
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showSettings = true } label: { Image(systemName: "gearshape") }
-                }
             }
-            .refreshable { await library.rescan() }
             .libraryDestinations()
             .addMusicImporter($importMode)
             .sheet(isPresented: $showSettings) { SettingsView() }
         }
     }
 }
-
 struct EmptyLibraryView: View {
     @Binding var importMode: ImportMode?
 

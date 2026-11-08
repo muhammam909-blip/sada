@@ -116,6 +116,18 @@ final class LibraryStore {
     }
     var mostPlayed: [Track] { tracks.filter { $0.playCount > 0 }.sorted { $0.playCount > $1.playCount } }
 
+    /// The library copy of an online song, if you have it.
+    func localTrack(title: String, artist: String) -> Track? {
+        let t = TitleCleaner.cleanForMatching(title)
+        let a = TitleCleaner.cleanForMatching(artist)
+        guard !t.isEmpty else { return nil }
+        return tracks.first {
+            TitleCleaner.cleanForMatching($0.title) == t
+                && (a.isEmpty || TitleCleaner.cleanForMatching($0.displayArtist).contains(a)
+                    || a.contains(TitleCleaner.cleanForMatching($0.displayArtist)))
+        }
+    }
+
     /// True if a song with this title/artist is already in the library (used by online search).
     func contains(title: String, artist: String) -> Bool {
         let t = TitleCleaner.cleanForMatching(title)
@@ -880,6 +892,36 @@ extension LibraryStore {
         folderRevision += 1
     }
 
+    /// Moves a whole folder (with everything inside) into another folder or root.
+    func moveFolder(sourceID: String?, path: String, toSource: String?, folder destination: String) {
+        guard !path.isEmpty, let from = folderURL(sourceID: sourceID, path: path),
+              let destRoot = rootURL(for: toSource) else { return }
+        // Can't move a folder into itself or its own subfolder.
+        if sourceID == toSource && (destination == path || destination.hasPrefix(path + "/")) { return }
+        let name = (path as NSString).lastPathComponent
+        let destDir = destination.isEmpty ? destRoot : destRoot.appendingPathComponent(destination, isDirectory: true)
+        let target = uniqueURL(destDir.appendingPathComponent(name, isDirectory: true))
+        let fm = FileManager.default
+        try? fm.createDirectory(at: destDir, withIntermediateDirectories: true)
+        do {
+            try fm.moveItem(at: from, to: target)
+        } catch {
+            do {
+                try fm.copyItem(at: from, to: target)
+                try fm.removeItem(at: from)
+            } catch { return }
+        }
+        let newPath = destination.isEmpty ? target.lastPathComponent : destination + "/" + target.lastPathComponent
+        let prefix = path + "/"
+        var copy = tracks
+        for i in copy.indices where copy[i].sourceID == sourceID && copy[i].relativePath.hasPrefix(prefix) {
+            copy[i].relativePath = newPath + "/" + copy[i].relativePath.dropFirst(prefix.count)
+            copy[i].sourceID = toSource
+        }
+        tracks = copy
+        save()
+        folderRevision += 1
+    }
     /// Every folder (for the "Move to…" picker): (sourceID, path, display name).
     func allFolders() -> [(sourceID: String?, path: String, name: String)] {
         var out: [(String?, String, String)] = []

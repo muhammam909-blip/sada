@@ -6,35 +6,103 @@ struct NowPlayingView: View {
     @Environment(PlayerEngine.self) private var player
     @Environment(\.dismiss) private var dismiss
     @State private var mode: Mode = .artwork
+    @State private var dragY: CGFloat = 0
+    @State private var swipeX: CGFloat = 0
+
+    /// Swipe down anywhere on the artwork / header to close (like Spotify & Apple Music).
+    private var dismissDrag: some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { g in
+                guard abs(g.translation.height) > abs(g.translation.width) else { return }
+                dragY = max(0, g.translation.height)
+            }
+            .onEnded { g in
+                if g.translation.height > 140 || g.predictedEndTranslation.height > 420 {
+                    dismiss()
+                } else {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { dragY = 0 }
+                }
+            }
+    }
+
+    /// Swipe the artwork left = next song, right = previous.
+    private var skipDrag: some Gesture {
+        DragGesture(minimumDistance: 16)
+            .onChanged { g in
+                guard abs(g.translation.width) > abs(g.translation.height) else {
+                    dragY = max(0, g.translation.height)
+                    return
+                }
+                swipeX = g.translation.width
+            }
+            .onEnded { g in
+                if dragY > 0 {
+                    if g.translation.height > 140 || g.predictedEndTranslation.height > 420 { dismiss() }
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { dragY = 0 }
+                    return
+                }
+                let w = g.translation.width
+                guard abs(w) > 90 || abs(g.predictedEndTranslation.width) > 300 else {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { swipeX = 0 }
+                    return
+                }
+                let forward = w < 0
+                withAnimation(.easeIn(duration: 0.15)) { swipeX = forward ? -500 : 500 }
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(150))
+                    if forward { player.next() } else { player.previous() }
+                    swipeX = forward ? 500 : -500
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.78)) { swipeX = 0 }
+                }
+            }
+    }
 
     var body: some View {
         ZStack {
             NowPlayingBackdrop()
                 .ignoresSafeArea()
+                .opacity(1 - min(dragY / 600, 0.4))
 
             VStack(spacing: 0) {
                 Button { dismiss() } label: {
-                    Capsule()
-                        .fill(.white.opacity(0.45))
-                        .frame(width: 42, height: 5)
-                        .frame(maxWidth: .infinity, minHeight: 28)
+                    Image(systemName: "chevron.compact.down")
+                        .font(.system(size: 30, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.55))
+                        .frame(maxWidth: .infinity, minHeight: 34)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .gesture(dismissDrag)
 
                 switch mode {
                 case .artwork:
                     BigArtwork(image: player.currentArtwork, seed: player.current?.albumID ?? "", isPlaying: player.isPlaying)
+                        .offset(x: swipeX)
+                        .rotationEffect(.degrees(Double(swipeX) / 40))
+                        .opacity(1 - min(abs(swipeX) / 700, 0.5))
                         .frame(maxHeight: .infinity)
+                        .contentShape(Rectangle())
                         .onTapGesture(count: 2) { player.togglePlayPause() }
+                        .gesture(skipDrag)
+                        .overlay {
+                            if player.isResolving {
+                                ProgressView().controlSize(.large).tint(.white)
+                                    .padding(20).background(.ultraThinMaterial, in: Circle())
+                            }
+                        }
                     TitleRow()
                         .padding(.bottom, 18)
+                        .id(player.current?.id)
+                        .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 8)), removal: .opacity))
+                        .animation(.smooth(duration: 0.35), value: player.current?.id)
                 case .lyrics:
                     CompactHeader { withAnimation(.spring(duration: 0.45)) { mode = .artwork } }
+                        .gesture(dismissDrag)
                     LyricsView()
                         .frame(maxHeight: .infinity)
                 case .queue:
                     CompactHeader { withAnimation(.spring(duration: 0.45)) { mode = .artwork } }
+                        .gesture(dismissDrag)
                     QueueView()
                         .frame(maxHeight: .infinity)
                 }
@@ -56,6 +124,9 @@ struct NowPlayingView: View {
             .padding(.horizontal, 28)
             .foregroundStyle(.white)
         }
+        .offset(y: dragY)
+        .scaleEffect(1 - min(dragY / 3000, 0.06))
+        .clipShape(RoundedRectangle(cornerRadius: dragY > 0 ? 40 : 0, style: .continuous))
         .environment(\.colorScheme, .dark)
         .sensoryFeedback(.impact(weight: .light), trigger: player.current?.id)
         .onChange(of: player.current == nil) { _, empty in if empty { dismiss() } }
