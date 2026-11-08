@@ -251,12 +251,12 @@ final class DownloadManager {
         }
     }
 
-    static func seconds(_ text: String?) -> Double {
+    nonisolated static func seconds(_ text: String?) -> Double {
         guard let text else { return 0 }
         return text.split(separator: ":").reduce(0) { $0 * 60 + (Double($1) ?? 0) }
     }
 
-    static func safeFileName(_ s: String) -> String {
+    nonisolated static func safeFileName(_ s: String) -> String {
         let bad = CharacterSet(charactersIn: "/\\?%*|\"<>:")
         return s.components(separatedBy: bad).joined(separator: " ")
             .trimmingCharacters(in: .whitespaces)
