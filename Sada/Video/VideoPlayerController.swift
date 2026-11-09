@@ -41,11 +41,19 @@ struct VideoSurface: UIViewRepresentable {
 
 @MainActor
 enum DeviceControls {
-    static weak var volumeSlider: UISlider?
+    static weak var volumeView: MPVolumeView?
+
+    private static var slider: UISlider? {
+        volumeView?.subviews.lazy.compactMap { $0 as? UISlider }.first
+    }
 
     static var volume: Float {
-        get { volumeSlider?.value ?? AVAudioSession.sharedInstance().outputVolume }
-        set { volumeSlider?.value = max(0, min(1, newValue)) }
+        get { AVAudioSession.sharedInstance().outputVolume }
+        set {
+            guard let slider else { return }
+            slider.setValue(max(0, min(1, newValue)), animated: false)
+            slider.sendActions(for: .valueChanged)
+        }
     }
 
     static var screen: UIScreen? {
@@ -61,11 +69,10 @@ enum DeviceControls {
 /// An invisible MPVolumeView: lets gestures change the volume and hides the system volume HUD.
 struct HiddenVolumeView: UIViewRepresentable {
     func makeUIView(context: Context) -> MPVolumeView {
-        let view = MPVolumeView(frame: CGRect(x: -100, y: -100, width: 10, height: 10))
-        view.alpha = 0.0001
-        DispatchQueue.main.async {
-            DeviceControls.volumeSlider = view.subviews.compactMap { $0 as? UISlider }.first
-        }
+        let view = MPVolumeView(frame: CGRect(x: 0, y: 0, width: 120, height: 30))
+        view.alpha = 0.011
+        view.isUserInteractionEnabled = false
+        DeviceControls.volumeView = view
         return view
     }
     func updateUIView(_ uiView: MPVolumeView, context: Context) {}

@@ -59,6 +59,7 @@ final class VideoPlayerController {
     @ObservationIgnored private var rateObservation: NSKeyValueObservation?
     @ObservationIgnored private var endObserver: NSObjectProtocol?
     @ObservationIgnored private var vlcObservers: [NSObjectProtocol] = []
+    @ObservationIgnored private var lastTickAt = Date()
     @ObservationIgnored private var pendingStart: Double?
     @ObservationIgnored private var lastSave = Date.distantPast
     @ObservationIgnored private var vlcResumeDone = false
@@ -118,7 +119,7 @@ final class VideoPlayerController {
 
     private func startApple(_ url: URL) {
         backend = .apple
-        vlc.stop()
+        stopVLCInBackground()
         let playerItem = AVPlayerItem(url: url)
         statusObservation = playerItem.observe(\.status, options: [.new]) { [weak self] it, _ in
             let status = it.status
@@ -139,6 +140,7 @@ final class VideoPlayerController {
         vlcResumeDone = false
         let media = VLCMedia(url: url)
         media.addOption(url.isFileURL ? ":file-caching=800" : ":network-caching=1500")
+        if let audio = item.audioURL { media.addOption(":input-slave=\(audio)") }
         vlc.media = media
         // VLC reports progress through notifications on the main thread. Polling its
         // properties from the main thread can deadlock VLC, which froze the controls.
@@ -278,6 +280,7 @@ final class VideoPlayerController {
     private func tick(_ t: Double) {
         guard t.isFinite else { return }
         currentTime = t
+        lastTickAt = Date()
         if !cues.isEmpty {
             subtitleText = SubtitleParser.cue(at: t - subtitleDelay, in: cues)?.text
         }
@@ -292,10 +295,23 @@ final class VideoPlayerController {
 
     // MARK: Controls
 
+    /// Smooth position for the scrubber between engine updates.
+    func displayTime(at date: Date) -> Double {
+        guard isPlaying else { return currentTime }
+        return min(currentTime + date.timeIntervalSince(lastTickAt) * Double(rate), max(duration, currentTime))
+    }
+
+    func pauseNow() {
+        isPlaying = false
+        backend == .apple ? avPlayer.pause() : vlc.pause()
+    }
+
     func togglePlay() {
         if isPlaying {
+            isPlaying = false // update the button instantly
             backend == .apple ? avPlayer.pause() : vlc.pause()
         } else {
+            isPlaying = true
             if ended { ended = false; seek(to: 0) }
             if backend == .apple {
                 avPlayer.play()
@@ -309,6 +325,7 @@ final class VideoPlayerController {
     func seek(to seconds: Double) {
         let target = max(0, min(seconds, max(duration - 1, 0)))
         currentTime = target
+        lastTickAt = Date()
         if backend == .apple {
             avPlayer.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
         } else {
@@ -316,7 +333,16 @@ final class VideoPlayerController {
         }
     }
 
-    func skip(by seconds: Double) { seek(to: currentTime + seconds) }
+    func skip(by seconds: Double) {
+        if backend == .vlc {
+            // VLC's relative jump doesn't block the main thread like an absolute seek can.
+            currentTime = max(0, min(currentTime + seconds, duration))
+            lastTickAt = Date()
+            seconds >= 0 ? vlc.jumpForward(Int32(seconds)) : vlc.jumpBackward(Int32(-seconds))
+        } else {
+            seek(to: currentTime + seconds)
+        }
+    }
 
     func setRate(_ r: Float) {
         rate = r
@@ -423,6 +449,12 @@ final class VideoPlayerController {
 
     // MARK: Lifecycle
 
+    /// VLC's stop() can block for a moment; never do it on the main thread.
+    private func stopVLCInBackground() {
+        let player = vlc
+        DispatchQueue.global(qos: .userInitiated).async { player.stop() }
+    }
+
     func saveProgress() {
         lastSave = Date()
         guard isReady, currentTime > 5 else { return }
@@ -432,7 +464,7 @@ final class VideoPlayerController {
     func stop() {
         saveProgress()
         avPlayer.pause()
-        vlc.stop()
+        stopVLCInBackground()
         vlcObservers.forEach { NotificationCenter.default.removeObserver($0) }
         vlcObservers = []
         if let timeObserver { avPlayer.removeTimeObserver(timeObserver) }

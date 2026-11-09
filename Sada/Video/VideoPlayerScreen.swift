@@ -80,6 +80,7 @@ struct VideoPlayerScreen: View {
     @State private var showEpisodes = false
     @State private var boosted = false
     @State private var tapFeedback: (side: Int, id: Int)?
+    @State private var nextUp: VideoItem?
     @AppStorage("subtitle.size") private var subtitleSize: Double = 20
     @AppStorage("subtitle.background") private var subtitleBackground = true
     @AppStorage("subtitle.yellow") private var subtitleYellow = false
@@ -107,10 +108,10 @@ struct VideoPlayerScreen: View {
                     .ignoresSafeArea()
                 HiddenVolumeView().frame(width: 1, height: 1)
 
-                subtitles(geo: geo)
+                SubtitleOverlay(controller: controller, raised: showControls && !locked, isLandscape: isLandscape, width: geo.size.width)
                 gestureLayer(geo: geo)
 
-                if let hud { hudView(hud).transition(.opacity.combined(with: .scale(scale: 0.9))) }
+                if let hud { hudView(hud).transition(.opacity) }
 
                 if let feedback = tapFeedback {
                     skipRipple(side: feedback.side)
@@ -124,7 +125,7 @@ struct VideoPlayerScreen: View {
                     Label("2× Speed", systemImage: "forward.fill")
                         .font(.subheadline.weight(.semibold))
                         .padding(.horizontal, 14).padding(.vertical, 8)
-                        .glassEffect(.regular, in: Capsule())
+                        .background(.black.opacity(0.5), in: Capsule())
                         .frame(maxHeight: .infinity, alignment: .top)
                         .padding(.top, 24)
                 }
@@ -155,6 +156,7 @@ struct VideoPlayerScreen: View {
         .preferredColorScheme(.dark)
         .onAppear { scheduleHide() }
         .onDisappear { controller.stop() }
+        .task(id: controller.item.id) { nextUp = VideoStore.shared.nextEpisode(after: controller.item) }
         .sheet(isPresented: $showSubtitleSheet) {
             SubtitleSheet(controller: controller).presentationDetents([.medium, .large])
         }
@@ -168,29 +170,8 @@ struct VideoPlayerScreen: View {
     }
 
     private func close() {
-        controller.stop()
-        onClose()
-    }
-
-    // MARK: Subtitles
-
-    @ViewBuilder private func subtitles(geo: GeometryProxy) -> some View {
-        if let text = controller.subtitleText {
-            Text(text)
-                .font(.system(size: subtitleSize, weight: .semibold))
-                .multilineTextAlignment(.center)
-                .foregroundStyle(subtitleYellow ? Color.yellow : .white)
-                .shadow(color: .black, radius: 2)
-                .shadow(color: .black.opacity(0.9), radius: 4)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 4)
-                .background(.black.opacity(subtitleBackground ? 0.45 : 0), in: RoundedRectangle(cornerRadius: 6))
-                .frame(maxWidth: geo.size.width * 0.82)
-                .frame(maxHeight: .infinity, alignment: .bottom)
-                .padding(.bottom, showControls && !locked ? (isLandscape ? 120 : 170) : 36)
-                .animation(.easeOut(duration: 0.2), value: showControls)
-                .allowsHitTesting(false)
-        }
+        controller.pauseNow()
+        onClose() // the engine is stopped in onDisappear, off the main thread
     }
 
     // MARK: Gestures
@@ -317,33 +298,23 @@ struct VideoPlayerScreen: View {
 
     // MARK: HUDs
 
+    /// MX Player style: volume as a vertical bar on the right, brightness on the left.
     @ViewBuilder private func hudView(_ hud: HUD) -> some View {
-        Group {
-            switch hud {
-            case .volume(let v):
-                levelHUD(icon: v == 0 ? "speaker.slash.fill" : "speaker.wave.3.fill", value: Double(v))
-            case .brightness(let b):
-                levelHUD(icon: "sun.max.fill", value: Double(b))
-            case .text(let t):
-                Text(t).font(.headline.monospacedDigit()).padding(.horizontal, 18).padding(.vertical, 12)
-            }
+        switch hud {
+        case .volume(let v):
+            SideLevel(icon: v == 0 ? "speaker.slash.fill" : (v < 0.5 ? "speaker.wave.1.fill" : "speaker.wave.3.fill"), value: Double(v))
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.trailing, isLandscape ? 70 : 24)
+        case .brightness(let b):
+            SideLevel(icon: b < 0.4 ? "sun.min.fill" : "sun.max.fill", value: Double(b))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, isLandscape ? 70 : 24)
+        case .text(let t):
+            Text(t).font(.headline.monospacedDigit())
+                .foregroundStyle(.white)
+                .padding(.horizontal, 18).padding(.vertical, 12)
+                .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
-        .foregroundStyle(.white)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-    }
-
-    private func levelHUD(icon: String, value: Double) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon).font(.title3).frame(width: 26)
-            GeometryReader { g in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(.white.opacity(0.25))
-                    Capsule().fill(.white).frame(width: g.size.width * max(0, min(1, value)))
-                }
-            }
-            .frame(width: 150, height: 6)
-        }
-        .padding(.horizontal, 18).padding(.vertical, 14)
     }
 
     private func skipRipple(side: Int) -> some View {
@@ -353,7 +324,7 @@ struct VideoPlayerScreen: View {
         }
         .foregroundStyle(.white)
         .padding(24)
-        .glassEffect(.regular, in: Circle())
+        .background(.black.opacity(0.35), in: Circle())
     }
 
     // MARK: Controls
@@ -370,7 +341,7 @@ struct VideoPlayerScreen: View {
                     Button { close() } label: {
                         Image(systemName: "xmark").font(.headline).frame(width: 44, height: 44)
                     }
-                    .glassEffect(.regular.interactive(), in: Circle())
+                    .background(.black.opacity(0.38), in: Circle())
                     Spacer()
                     VStack(spacing: 2) {
                         Text(controller.item.kind == .episode ? (controller.item.showName ?? controller.item.title) : controller.item.title)
@@ -384,7 +355,7 @@ struct VideoPlayerScreen: View {
                         Button { controller.pip?.startPictureInPicture() } label: {
                             Image(systemName: "pip.enter").font(.headline).frame(width: 44, height: 44)
                         }
-                        .glassEffect(.regular.interactive(), in: Circle())
+                        .background(.black.opacity(0.38), in: Circle())
                     } else {
                         Color.clear.frame(width: 44, height: 44)
                     }
@@ -406,7 +377,7 @@ struct VideoPlayerScreen: View {
                             .contentTransition(.symbolEffect(.replace))
                             .frame(width: 86, height: 86)
                     }
-                    .glassEffect(.regular.interactive(), in: Circle())
+                    .background(.black.opacity(0.38), in: Circle())
                     transportButton("goforward.\(skipSeconds)", size: 30) { controller.skip(by: Double(skipSeconds)) }
                 }
 
@@ -416,7 +387,7 @@ struct VideoPlayerScreen: View {
                 VStack(spacing: 12) {
                     VideoScrubber(controller: controller, onScrub: { scheduleHide() })
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: isLandscape ? 30 : 22) {
+                        HStack(spacing: 10) {
                             Menu {
                                 ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { r in
                                     Button {
@@ -442,7 +413,7 @@ struct VideoPlayerScreen: View {
                             Button { controller.cycleGravity(); flash(.text(controller.gravityName)) } label: {
                                 actionLabel(controller.gravityName, icon: "arrow.up.left.and.arrow.down.right")
                             }
-                            if let next = VideoStore.shared.nextEpisode(after: controller.item) {
+                            if let next = nextUp {
                                 Button { controller.load(next) } label: {
                                     actionLabel("Next Ep.", icon: "forward.end.fill")
                                 }
@@ -466,15 +437,19 @@ struct VideoPlayerScreen: View {
         } label: {
             Image(systemName: icon).font(.system(size: size, weight: .medium)).frame(width: 64, height: 64)
         }
-        .glassEffect(.regular.interactive(), in: Circle())
+        .background(.black.opacity(0.38), in: Circle())
     }
 
     private func actionLabel(_ title: String, icon: String) -> some View {
-        HStack(spacing: 7) {
-            Image(systemName: icon)
+        HStack(spacing: 8) {
+            Image(systemName: icon).font(.title3)
             Text(title).lineLimit(1)
         }
-        .font(.subheadline.weight(.semibold))
+        .font(.body.weight(.semibold))
+        .padding(.horizontal, 14)
+        .frame(height: 46)
+        .background(.white.opacity(0.12), in: Capsule())
+        .contentShape(Capsule())
         .fixedSize()
     }
 
@@ -487,7 +462,7 @@ struct VideoPlayerScreen: View {
                 .font(.subheadline.weight(.semibold))
                 .padding(.horizontal, 16).padding(.vertical, 10)
         }
-        .glassEffect(.regular.interactive(), in: Capsule())
+        .background(.black.opacity(0.45), in: Capsule())
         .foregroundStyle(.white)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .padding(.top, isLandscape ? 20 : 60)
@@ -502,11 +477,11 @@ struct VideoPlayerScreen: View {
         }
         .foregroundStyle(.white)
         .padding(30)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24))
+        .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 24))
     }
 
     @ViewBuilder private var endCard: some View {
-        if let next = VideoStore.shared.nextEpisode(after: controller.item) {
+        if let next = nextUp {
             UpNextCard(next: next, autoPlay: autoNext) { controller.load(next) } onClose: { close() }
         }
     }
@@ -518,7 +493,7 @@ struct VideoPlayerScreen: View {
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 16).padding(.vertical, 10)
-        .glassEffect(.regular, in: Capsule())
+        .background(.black.opacity(0.55), in: Capsule())
         .frame(maxHeight: .infinity, alignment: .top)
         .padding(.top, isLandscape ? 80 : 130)
     }
@@ -561,38 +536,117 @@ struct EpisodesSheet: View {
     }
 }
 
+/// YouTube-style seek bar: thin, smooth (interpolated between engine updates),
+/// grows while dragging and shows the target time above the thumb.
 struct VideoScrubber: View {
     let controller: VideoPlayerController
     var onScrub: () -> Void
     @State private var drag: Double?
 
     var body: some View {
-        let duration = max(controller.duration, 1)
-        let value = drag ?? controller.currentTime
-        HStack(spacing: 12) {
-            Text(formatTime(value)).font(.caption.monospacedDigit())
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(.white.opacity(0.3))
-                    Capsule().fill(.tint).frame(width: geo.size.width * min(value / duration, 1))
-                    Circle().fill(.white)
-                        .frame(width: drag == nil ? 12 : 18, height: drag == nil ? 12 : 18)
-                        .offset(x: geo.size.width * min(value / duration, 1) - (drag == nil ? 6 : 9))
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !controller.isPlaying || drag != nil)) { context in
+            let duration = max(controller.duration, 1)
+            let value = drag ?? controller.displayTime(at: context.date)
+            let fraction = min(max(value / duration, 0), 1)
+            VStack(spacing: 6) {
+                GeometryReader { geo in
+                    let w = geo.size.width
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(.white.opacity(0.28)).frame(height: drag == nil ? 4 : 8)
+                        Capsule().fill(.tint).frame(width: w * fraction, height: drag == nil ? 4 : 8)
+                        Circle().fill(.tint)
+                            .frame(width: drag == nil ? 14 : 22, height: drag == nil ? 14 : 22)
+                            .shadow(color: .black.opacity(0.4), radius: 3)
+                            .offset(x: w * fraction - (drag == nil ? 7 : 11))
+                        if let d = drag {
+                            Text(formatTime(d))
+                                .font(.subheadline.weight(.bold).monospacedDigit())
+                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                .background(.black.opacity(0.75), in: Capsule())
+                                .fixedSize()
+                                .offset(x: min(max(w * fraction - 30, 0), w - 64), y: -34)
+                        }
+                    }
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .gesture(DragGesture(minimumDistance: 0)
+                        .onChanged { g in
+                            drag = min(max(g.location.x / w, 0), 1) * duration
+                            onScrub()
+                        }
+                        .onEnded { _ in
+                            if let d = drag { controller.seek(to: d) }
+                            drag = nil
+                        })
+                    .animation(.snappy(duration: 0.18), value: drag == nil)
                 }
-                .frame(height: drag == nil ? 4 : 7)
-                .frame(maxHeight: .infinity)
-                .contentShape(Rectangle())
-                .gesture(DragGesture(minimumDistance: 0)
-                    .onChanged { g in drag = min(max(g.location.x / geo.size.width, 0), 1) * duration; onScrub() }
-                    .onEnded { _ in if let d = drag { controller.seek(to: d) }; drag = nil })
-                .animation(.snappy(duration: 0.2), value: drag == nil)
+                .frame(height: 30)
+                HStack {
+                    Text(formatTime(value))
+                    Spacer()
+                    Text("-" + formatTime(max(duration - value, 0)))
+                }
+                .font(.caption.weight(.medium).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.85))
             }
-            .frame(height: 24)
-            Text("-" + formatTime(max(duration - value, 0))).font(.caption.monospacedDigit())
         }
     }
 }
 
+/// Subtitles live in their own view so only they redraw when the line changes.
+struct SubtitleOverlay: View {
+    let controller: VideoPlayerController
+    let raised: Bool
+    let isLandscape: Bool
+    let width: CGFloat
+    @AppStorage("subtitle.size") private var subtitleSize: Double = 20
+    @AppStorage("subtitle.background") private var subtitleBackground = true
+    @AppStorage("subtitle.yellow") private var subtitleYellow = false
+
+    var body: some View {
+        if let text = controller.subtitleText {
+            Text(text)
+                .font(.system(size: subtitleSize, weight: .semibold))
+                .multilineTextAlignment(.center)
+                .foregroundStyle(subtitleYellow ? Color.yellow : .white)
+                .shadow(color: .black, radius: 2)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .background(.black.opacity(subtitleBackground ? 0.45 : 0), in: RoundedRectangle(cornerRadius: 6))
+                .frame(maxWidth: width * 0.82)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+                .padding(.bottom, raised ? (isLandscape ? 150 : 200) : 36)
+                .animation(.easeOut(duration: 0.2), value: raised)
+                .allowsHitTesting(false)
+        }
+    }
+}
+
+/// Vertical level indicator (MX Player style) for volume / brightness.
+struct SideLevel: View {
+    let icon: String
+    let value: Double
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Text("\(Int((max(0, min(1, value)) * 100).rounded()))")
+                .font(.caption.weight(.bold).monospacedDigit())
+            GeometryReader { g in
+                ZStack(alignment: .bottom) {
+                    Capsule().fill(.white.opacity(0.25))
+                    Capsule().fill(.white).frame(height: g.size.height * max(0, min(1, value)))
+                }
+            }
+            .frame(width: 6, height: 150)
+            Image(systemName: icon).font(.title3)
+        }
+        .foregroundStyle(.white)
+        .padding(.vertical, 14)
+        .padding(.horizontal, 12)
+        .background(.black.opacity(0.55), in: Capsule())
+        .animation(.linear(duration: 0.05), value: value)
+    }
+}
 struct UpNextCard: View {
     let next: VideoItem
     var autoPlay = true

@@ -57,10 +57,13 @@ struct RootView: View {
             if id != nil, let video = router.playingVideo { VideoPresenter.present(video) }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
-        .tabViewBottomAccessory {
-            MiniPlayerView { router.showNowPlaying = true }
+        .modifier(MiniPlayerAccessory(enabled: player.current != nil && !router.miniPlayerHidden) {
+            MiniPlayerView(onOpen: { router.showNowPlaying = true },
+                           onHide: { withAnimation(.snappy) { router.miniPlayerHidden = true } })
                 .matchedTransitionSource(id: "nowPlaying", in: namespace)
-        }
+        })
+        .onChange(of: player.current?.id) { _, _ in router.miniPlayerHidden = false }
+        .onChange(of: player.isPlaying) { _, playing in if playing { router.miniPlayerHidden = false } }
         .trackActionSheets(enabled: !router.showNowPlaying)
         .fullScreenCover(isPresented: $router.showNowPlaying) {
             NowPlayingView()
@@ -72,8 +75,23 @@ struct RootView: View {
     }
 }
 
+/// Shows the mini player above the tab bar; it can be swiped away and comes back when music changes.
+struct MiniPlayerAccessory<Accessory: View>: ViewModifier {
+    let enabled: Bool
+    @ViewBuilder let accessory: () -> Accessory
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.1, *) {
+            content.tabViewBottomAccessory(isEnabled: enabled) { accessory() }
+        } else {
+            content.tabViewBottomAccessory { accessory() }
+        }
+    }
+}
+
 struct MiniPlayerView: View {
     var onOpen: () -> Void
+    var onHide: () -> Void = {}
 
     @Environment(PlayerEngine.self) private var player
     @Environment(\.tabViewBottomAccessoryPlacement) private var placement
@@ -139,6 +157,8 @@ struct MiniPlayerView: View {
                 .onEnded { g in
                     if g.translation.height < -30, abs(g.translation.height) > abs(g.translation.width) {
                         if player.current != nil { onOpen() }
+                    } else if g.translation.height > 25, abs(g.translation.height) > abs(g.translation.width) {
+                        onHide() // swipe down hides the mini player
                     } else if g.translation.width < -70 {
                         player.next()
                     } else if g.translation.width > 70 {

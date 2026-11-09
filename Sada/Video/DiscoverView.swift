@@ -10,6 +10,9 @@ struct OnlineTitleRoute: Hashable {
 struct DiscoverView: View {
     @State private var addons = AddonStore.shared
     @State private var rows: [(id: String, title: String, items: [MetaPreview])] = []
+    @State private var ytRows: [YouTubeRow] = []
+    @State private var openingVideo: String?
+    @Environment(AppRouter.self) private var router
     @State private var loading = false
     @State private var query = ""
     @State private var results: [MetaPreview] = []
@@ -34,6 +37,36 @@ struct DiscoverView: View {
                                            description: Text("Add addons in Settings › Videos & Player › Online Sources."))
                 } else {
                     if let hero = rows.first?.items.first { HeroBanner(item: hero) }
+                    ForEach(ytRows) { row in
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 6) {
+                                Text(row.title).font(.title3.bold())
+                                Image(systemName: "play.rectangle.fill").foregroundStyle(.red).font(.subheadline)
+                            }
+                            .padding(.horizontal)
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                LazyHStack(alignment: .top, spacing: 12) {
+                                    ForEach(row.items) { v in
+                                        Button { Task { await playYouTube(v) } } label: {
+                                            YouTubeCard(item: v)
+                                                .overlay {
+                                                    if openingVideo == v.id {
+                                                        ProgressView().controlSize(.large)
+                                                            .frame(width: 220, height: 124)
+                                                            .background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
+                                                            .frame(maxHeight: .infinity, alignment: .top)
+                                                    }
+                                                }
+                                        }
+                                        .buttonStyle(PressableStyle())
+                                    }
+                                }
+                                .scrollTargetLayout()
+                                .padding(.horizontal)
+                            }
+                            .scrollTargetBehavior(.viewAligned)
+                        }
+                    }
                     if rows.isEmpty && loading {
                         ForEach(0..<3, id: \.self) { _ in SkeletonCarousel() }
                     }
@@ -55,11 +88,7 @@ struct DiscoverView: View {
                             .scrollTargetBehavior(.viewAligned)
                         }
                     }
-                    if addons.streamAddons.isEmpty {
-                        Label("Browsing works now. To play, add a streaming addon in Settings › Videos & Player › Online Sources.",
-                              systemImage: "info.circle")
-                            .font(.footnote).foregroundStyle(.secondary).padding(.horizontal)
-                    }
+
                 }
             }
             .padding(.vertical, 8)
@@ -89,9 +118,34 @@ struct DiscoverView: View {
         .padding(.horizontal)
     }
 
+    private func playYouTube(_ v: YouTubeVideos.Result) async {
+        openingVideo = v.id
+        defer { openingVideo = nil }
+        if let item = await YouTubeVideos.item(for: v) { router.playingVideo = item }
+    }
+
+    private func loadYouTubeRows() async {
+        let region = UserDefaults.standard.string(forKey: "online.region") ?? "EG"
+        let built = await withTaskGroup(of: YouTubeRow?.self) { group in
+            for q in YouTubeRow.queries {
+                group.addTask {
+                    let items = await YouTubeVideos.search(q.query, length: .long, region: region)
+                        .filter { $0.verified && $0.seconds >= 40 * 60 }
+                    return items.count >= 3 ? YouTubeRow(id: q.id, title: q.title, items: Array(items.prefix(15))) : nil
+                }
+            }
+            var out: [YouTubeRow] = []
+            for await row in group { if let row { out.append(row) } }
+            return out
+        }
+        let order = YouTubeRow.queries.map(\.id)
+        withAnimation { ytRows = built.sorted { (order.firstIndex(of: $0.id) ?? 0) < (order.firstIndex(of: $1.id) ?? 0) } }
+    }
+
     private func load() async {
         loading = true
         defer { loading = false }
+        async let yt: Void = loadYouTubeRows()
         var built: [(String, String, [MetaPreview])] = []
         for addon in addons.catalogAddons {
             for catalog in (addon.catalogs ?? []).filter({ !$0.needsExtra && ["movie", "series"].contains($0.type) }).prefix(6) {
@@ -103,6 +157,7 @@ struct DiscoverView: View {
             }
         }
         withAnimation { rows = built.map { (id: $0.0, title: $0.1, items: $0.2) } }
+        await yt
     }
 
     private func search() async {
@@ -307,11 +362,9 @@ struct StreamPickerSheet: View {
             List {
                 if loading {
                     ForEach(0..<5, id: \.self) { _ in SkeletonRow() }
-                } else if AddonStore.shared.streamAddons.isEmpty {
-                    Text("No streaming addon added yet. Add one in Settings › Videos & Player › Online Sources (paste the manifest link from Nuvio).")
-                        .foregroundStyle(.secondary)
                 } else if streams.isEmpty {
-                    Text("No sources found for this title.").foregroundStyle(.secondary)
+                    Text("No legal source found for this title on YouTube or the Internet Archive. You can add more sources in Settings › Videos & Player › Online Sources.")
+                        .foregroundStyle(.secondary)
                 } else {
                     ForEach(streams) { s in
                         Button { Task { await play(s) } } label: {
@@ -338,7 +391,9 @@ struct StreamPickerSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
             .task {
-                streams = await AddonStore.shared.streams(type: type, id: target.id)
+                async let builtIn = BuiltInSources.streams(type: type, meta: meta, videoID: target.id, episode: target.episode)
+                async let addons = AddonStore.shared.streams(type: type, id: target.id)
+                streams = await builtIn + addons
                 loading = false
             }
         }
@@ -348,15 +403,20 @@ struct StreamPickerSheet: View {
         opening = s.id
         defer { opening = nil }
         var url = s.url
-        if url == nil, let yt = s.ytId { url = await StremioClient.youtubeURL(yt) }
+        var audio: URL?
+        if url == nil, let yt = s.ytId, let streams = await YouTubeVideos.playableStreams(yt) {
+            url = streams.video
+            audio = streams.audio
+        }
         guard let url else { return }
-        let item: VideoItem
+        var item: VideoItem
         if let ep = target.episode {
             item = .remote(url: url, title: target.title, kind: .episode, show: target.title,
                            season: ep.season, episode: ep.episode, episodeTitle: ep.displayTitle)
         } else {
             item = .remote(url: url, title: target.title, kind: .movie)
         }
+        item.audioURL = audio?.absoluteString
         dismiss()
         try? await Task.sleep(for: .milliseconds(350))
         router.playingVideo = item

@@ -35,6 +35,8 @@ struct VideoItem: Identifiable, Codable, Hashable {
     var duration: Double
     var lastWatched: Date?
     var watched: Bool
+    /// Separate audio stream for online videos (high-quality YouTube).
+    var audioURL: String?
 
     var fileName: String { (relativePath as NSString).lastPathComponent }
     var showKey: String { (showName ?? title).searchKey }

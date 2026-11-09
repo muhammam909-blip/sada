@@ -47,6 +47,7 @@ final class AppRouter {
     var tab: AppTab = .online
     var playingVideo: VideoItem?
     var deleteVideoCandidate: VideoItem?
+    var miniPlayerHidden = false
     var onlineQuery: String?
 }
 
