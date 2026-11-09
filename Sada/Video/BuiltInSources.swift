@@ -62,12 +62,15 @@ enum YouTubeVideos {
     /// 1080p/720p H.264 video plus AAC audio (VLC joins them), or a combined stream as fallback.
     static func playableStreams(_ id: String) async -> (video: URL, audio: URL?)? {
         guard let streams = try? await YouTube(videoID: id).streams else { return nil }
-        let preferredVideo = [137, 136, 135]
-        if let audio = streams.first(where: { $0.itag == 140 }) ?? streams.filterAudioOnly().highestAudioBitrateStream() {
-            for itag in preferredVideo {
-                if let video = streams.first(where: { $0.itag == itag }) { return (video.url, audio.url) }
-            }
+        let audio = streams.filter { $0.includesAudioTrack && !$0.includesVideoTrack && $0.fileExtension == .m4a }
+            .max { ($0.bitrate ?? 0) < ($1.bitrate ?? 0) }
+        // Best H.264/HEVC video-only stream up to 1080p (hardware-decoded, light on battery).
+        let video = streams.filter {
+            $0.includesVideoTrack && !$0.includesAudioTrack && $0.fileExtension == .mp4 && $0.isNativelyPlayable
+                && ($0.videoResolution ?? 0) <= 1080
         }
+        .max { ($0.videoResolution ?? 0, $0.bitrate ?? 0) < ($1.videoResolution ?? 0, $1.bitrate ?? 0) }
+        if let audio, let video { return (video.url, audio.url) }
         if let muxed = streams.filterVideoAndAudio().highestResolutionStream() { return (muxed.url, nil) }
         return nil
     }
