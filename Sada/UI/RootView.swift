@@ -5,6 +5,7 @@ struct RootView: View {
     @Environment(AppRouter.self) private var router
     @AppStorage("appearance") private var appearance: Appearance = .dark
     @AppStorage(ThemeKeys.accent) private var accentHex = AccentPreset.pink.rawValue
+    @AppStorage("accent.fromArtwork") private var accentFromArtwork = false
     @AppStorage(TabSettings.orderKey) private var tabOrder = TabSettings.defaultOrder
     @AppStorage(TabSettings.onlineKey) private var onlineEnabled = true
     @AppStorage(TabSettings.videosTabKey) private var videosSeparate = false
@@ -74,7 +75,8 @@ struct RootView: View {
                 .trackActionSheets(enabled: true)
         }
         .preferredColorScheme(appearance.scheme)
-        .tint(Color(hex: accentHex))
+        .tint(accentFromArtwork ? (player.artworkAccent ?? Color(hex: accentHex)) : Color(hex: accentHex))
+        .animation(.easeInOut(duration: 0.6), value: player.artworkAccent)
     }
 }
 

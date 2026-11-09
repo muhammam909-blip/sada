@@ -109,3 +109,31 @@ enum ColorExtractor {
         return colors
     }
 }
+
+extension ColorExtractor {
+    /// The most vivid colour of the artwork, made bright enough to use as an accent.
+    static func vibrant(from image: UIImage?) -> Color? {
+        guard let cg = image?.cgImage else { return nil }
+        let w = 8, h = 8
+        var pixels = [UInt8](repeating: 0, count: w * h * 4)
+        let ok: Bool = pixels.withUnsafeMutableBytes { buffer in
+            guard let ctx = CGContext(data: buffer.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return false }
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        guard ok else { return nil }
+        var best: (score: CGFloat, h: CGFloat, s: CGFloat)?
+        for i in 0..<(w * h) {
+            let c = UIColor(red: CGFloat(pixels[i * 4]) / 255, green: CGFloat(pixels[i * 4 + 1]) / 255,
+                            blue: CGFloat(pixels[i * 4 + 2]) / 255, alpha: 1)
+            var hue: CGFloat = 0, sat: CGFloat = 0, bri: CGFloat = 0, a: CGFloat = 0
+            c.getHue(&hue, saturation: &sat, brightness: &bri, alpha: &a)
+            let score = sat * (0.4 + bri)
+            if score > (best?.score ?? 0.15) { best = (score, hue, sat) }
+        }
+        guard let b = best else { return nil } // greyscale artwork: keep the normal accent
+        return Color(uiColor: UIColor(hue: b.h, saturation: max(b.s, 0.55), brightness: 0.92, alpha: 1))
+    }
+}

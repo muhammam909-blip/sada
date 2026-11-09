@@ -616,3 +616,51 @@ struct OnlineSongRow: View {
         .padding(.vertical, 2)
     }
 }
+
+/// Artist page extras: "More from this artist" online + Artist Radio.
+struct OnlineArtistSection: View {
+    let artistName: String
+    let seed: Track?
+    @Environment(PlayerEngine.self) private var player
+    @Environment(LibraryStore.self) private var library
+    @AppStorage(TabSettings.onlineKey) private var onlineEnabled = true
+    @State private var songs: [OnlineSong] = []
+    @State private var loaded = false
+
+    var body: some View {
+        if onlineEnabled {
+            Section {
+                if let seed {
+                    Button { player.startRadio(for: seed) } label: {
+                        Label("\(artistName) Radio", systemImage: "dot.radiowaves.left.and.right")
+                            .font(.body.weight(.semibold))
+                    }
+                }
+                if !loaded {
+                    ForEach(0..<3, id: \.self) { _ in SkeletonRow().listRowSeparator(.hidden) }
+                }
+                ForEach(Array(songs.enumerated()), id: \.element.id) { i, song in
+                    OnlineSongRow(song: song, isCurrent: player.current?.id == "yt:\(song.id)")
+                        .contentShape(Rectangle())
+                        .onTapGesture { player.playOnline(songs, startAt: i) }
+                        .contextMenu { OnlineSongMenu(song: song, list: songs, index: i) }
+                }
+            } header: {
+                HStack(spacing: 6) {
+                    BrandLogo(size: 20)
+                    Text("More from \(artistName)").font(.title3.bold()).foregroundStyle(.primary)
+                }
+            }
+            .task {
+                guard !loaded else { return }
+                let key = TitleCleaner.cleanForMatching(artistName)
+                let found = (try? await OnlineFeed.shared.search(artistName)) ?? []
+                songs = Array(found.filter { s in
+                    let a = TitleCleaner.cleanForMatching(s.artist)
+                    return (a.contains(key) || key.contains(a)) && !library.contains(title: s.title, artist: s.artist)
+                }.prefix(12))
+                withAnimation { loaded = true }
+            }
+        }
+    }
+}

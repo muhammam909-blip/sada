@@ -40,5 +40,32 @@ struct SadaShortcuts: AppShortcutsProvider {
             shortTitle: "Next Song",
             systemImageName: "forward.fill"
         )
+        AppShortcut(
+            intent: PlayArtistIntent(),
+            phrases: [
+                "Play \(\.$artist) in \(.applicationName)",
+                "Shuffle \(\.$artist) in \(.applicationName)",
+            ],
+            shortTitle: "Play Artist",
+            systemImageName: "music.microphone"
+        )
+        AppShortcut(
+            intent: ContinueShowIntent(),
+            phrases: [
+                "Continue \(\.$show) in \(.applicationName)",
+                "Watch \(\.$show) in \(.applicationName)",
+            ],
+            shortTitle: "Continue Show",
+            systemImageName: "play.tv"
+        )
+        AppShortcut(
+            intent: ResumeLastVideoIntent(),
+            phrases: [
+                "Continue watching in \(.applicationName)",
+                "Resume my movie in \(.applicationName)",
+            ],
+            shortTitle: "Continue Watching",
+            systemImageName: "play.rectangle.fill"
+        )
     }
 }

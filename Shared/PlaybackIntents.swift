@@ -44,3 +44,20 @@ struct PreviousTrackIntent: AudioPlaybackIntent {
         return .result()
     }
 }
+
+/// Shuffle the whole library (used by Control Center and the Action button).
+struct ShuffleLibraryIntent: AudioPlaybackIntent {
+    static let title: LocalizedStringResource = "Shuffle My Music"
+
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        #if !WIDGET_EXTENSION
+        await MainActor.run {
+            PlayerEngine.shared.configure()
+            PlayerEngine.shared.shuffleAll(LibraryStore.shared.tracks)
+        }
+        #endif
+        return .result()
+    }
+}

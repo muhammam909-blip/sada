@@ -75,3 +75,34 @@ enum SharedStore {
         return snapshot
     }
 }
+
+/// What the "Continue Watching" widget shows.
+struct VideoWidgetSnapshot: Codable {
+    struct Item: Codable, Hashable, Identifiable {
+        var id: String
+        var title: String
+        var subtitle: String
+        var progress: Double
+        var imageFile: String?
+    }
+
+    var items: [Item]
+    static let empty = VideoWidgetSnapshot(items: [])
+}
+
+extension SharedStore {
+    private static var videoSnapshotURL: URL? {
+        AppGroup.containerURL?.appendingPathComponent("video-widget.json")
+    }
+
+    static func saveVideos(_ snapshot: VideoWidgetSnapshot) {
+        guard let url = videoSnapshotURL, let data = try? JSONEncoder().encode(snapshot) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+
+    static func loadVideos() -> VideoWidgetSnapshot {
+        guard let url = videoSnapshotURL, let data = try? Data(contentsOf: url),
+              let s = try? JSONDecoder().decode(VideoWidgetSnapshot.self, from: data) else { return .empty }
+        return s
+    }
+}

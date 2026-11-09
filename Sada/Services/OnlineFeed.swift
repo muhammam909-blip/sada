@@ -142,6 +142,17 @@ final class OnlineFeed {
         recentlyPlayed.insert(song, at: 0)
         recentlyPlayed = Array(recentlyPlayed.prefix(20))
         if let data = try? JSONEncoder().encode(recentlyPlayed) { UserDefaults.standard.set(data, forKey: "online.recent") }
+
+        // Smart offline cache: a song you stream a few times is saved for offline listening.
+        let d = UserDefaults.standard
+        var counts = d.dictionary(forKey: "online.playCounts") as? [String: Int] ?? [:]
+        counts[song.id, default: 0] += 1
+        d.set(counts, forKey: "online.playCounts")
+        let threshold = d.object(forKey: "online.autoCacheAfter") as? Int ?? 3
+        if threshold > 0, counts[song.id, default: 0] >= threshold,
+           !LibraryStore.shared.contains(title: song.title, artist: song.artist) {
+            DownloadManager.shared.download(song)
+        }
     }
 
     /// Cached search so going back and forth is instant.

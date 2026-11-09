@@ -353,6 +353,8 @@ final class LibraryStore {
         if changed {
             tracks = result.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
             save()
+            SpotlightIndex.indexMusic()
+            SadaShortcuts.updateAppShortcutParameters()
         }
         if importStatus?.hasPrefix("Adding songs") == true { importStatus = nil }
     }

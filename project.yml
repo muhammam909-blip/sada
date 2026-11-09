@@ -9,7 +9,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.9.0"
+    MARKETING_VERSION: "0.10.0"
     CURRENT_PROJECT_VERSION: "1"
     CODE_SIGN_STYLE: Manual
     DEVELOPMENT_TEAM: ""
@@ -64,7 +64,7 @@ targets:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         NSLocalNetworkUsageDescription: Lets MHM reach streaming addons running on your computer.
-        LSSupportsOpeningDocumentsInPlace: false
+        LSSupportsOpeningDocumentsInPlace: true
         ALTAppGroups:
           - group.com.hammam.sada
         CFBundleURLTypes:
@@ -83,6 +83,18 @@ targets:
               - org.xiph.flac
               - com.microsoft.waveform-audio
               - public.aiff-audio
+          - CFBundleTypeName: Video
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.movie
+              - public.video
+              - public.mpeg-4
+              - com.apple.quicktime-movie
+              - com.apple.m4v-video
+              - public.avi
+              - org.matroska.mkv
+              - org.webmproject.webm
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hammam.sada

@@ -1,3 +1,4 @@
+import CoreSpotlight
 import SwiftUI
 
 @main
@@ -19,22 +20,48 @@ struct SadaApp: App {
                 .environment(player)
                 .environment(router)
                 .task { await library.bootstrap() }
-                .onOpenURL { url in
-                    if url.isFileURL {
-                        Task { await library.importFiles([url]) }
-                    } else if url.scheme == "sada" {
-                        router.showNowPlaying = player.current != nil
+                .onOpenURL { url in handleOpen(url) }
+                .onContinueUserActivity(CSSearchableItemActionType) { activity in
+                    if let id = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String {
+                        SpotlightIndex.open(id)
                     }
                 }
         }
         .onChange(of: scenePhase) { _, phase in
+            handleScene(phase)
+        }
+    }
+
+    /// "Open in MHM" from Files / other apps, widget taps and sada:// links.
+    private func handleOpen(_ url: URL) {
+        if url.isFileURL {
+            let ext = url.pathExtension.lowercased()
+            if VideoStore.videoExtensions.contains(ext) {
+                // Videos play straight from where they are (no copy).
+                _ = url.startAccessingSecurityScopedResource()
+                let parsed = VideoNameParser.parse(fileName: url.lastPathComponent, folders: [])
+                let item = VideoItem.remote(url: url, title: parsed.title, kind: parsed.kind, show: parsed.showName,
+                                            season: parsed.season, episode: parsed.episode)
+                router.playingVideo = item
+            } else {
+                Task { await library.importFiles([url]) }
+            }
+        } else if url.scheme == "sada" {
+            if url.host == "video", let id = url.pathComponents.last, let video = VideoStore.shared.video(id: id) {
+                router.playingVideo = video
+            } else {
+                router.showNowPlaying = player.current != nil
+            }
+        }
+    }
+
+    private func handleScene(_ phase: ScenePhase) {
             switch phase {
             case .background: player.persistState()
             case .active: Task { await library.rescanIfNeeded() }
             default: break
             }
         }
-    }
 }
 
 @MainActor

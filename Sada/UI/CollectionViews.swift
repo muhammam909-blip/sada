@@ -136,6 +136,8 @@ struct ArtistDetailView: View {
                 } header: {
                     Text("Songs").font(.title2.bold()).foregroundStyle(.primary)
                 }
+
+                OnlineArtistSection(artistName: artist.name, seed: artist.tracks.first)
             }
             .listStyle(.plain)
             .navigationBarTitleDisplayMode(.inline)

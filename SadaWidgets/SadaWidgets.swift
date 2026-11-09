@@ -7,6 +7,10 @@ struct SadaWidgetsBundle: WidgetBundle {
     var body: some Widget {
         NowPlayingWidget()
         NowPlayingLiveActivity()
+        ContinueWatchingWidget()
+        PlayPauseControl()
+        NextTrackControl()
+        ShuffleControl()
     }
 }
 

@@ -108,6 +108,7 @@ struct AppearanceSettingsView: View {
     @AppStorage(ThemeKeys.accent) private var accentHex = AccentPreset.pink.rawValue
     @AppStorage(ThemeKeys.npBackground) private var npBackground: NowPlayingBackgroundStyle = .animated
     @AppStorage(ThemeKeys.lyricsSize) private var lyricsSize: Double = 1.0
+    @AppStorage("accent.fromArtwork") private var accentFromArtwork = false
 
     var body: some View {
         Form {
@@ -116,6 +117,7 @@ struct AppearanceSettingsView: View {
                     ForEach(Appearance.allCases) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.menu)
+                Toggle("Accent Color from Song Artwork", isOn: $accentFromArtwork)
                 Picker("Player Background", selection: $npBackground) {
                     ForEach(NowPlayingBackgroundStyle.allCases) { Text($0.rawValue).tag($0) }
                 }
@@ -165,6 +167,7 @@ struct MusicSettingsView: View {
     @Environment(LibraryStore.self) private var library
     @AppStorage("fadeSeconds") private var fadeSeconds: Double = 0
     @AppStorage("lyricsInDynamicIsland") private var lyricsInDynamicIsland = false
+    @AppStorage("lyrics.karaoke") private var karaoke = true
     @AppStorage("autoArtwork") private var autoArtwork = true
     @AppStorage("autoLyrics") private var autoLyrics = true
 
@@ -182,6 +185,7 @@ struct MusicSettingsView: View {
                 }
             }
             Section {
+                Toggle("Karaoke Lyrics (line fills as it is sung)", isOn: $karaoke)
                 Toggle("Live Lyrics in Dynamic Island", isOn: $lyricsInDynamicIsland)
                     .onChange(of: lyricsInDynamicIsland) { _, _ in PlayerEngine.shared.publishExternalState() }
             } header: {
@@ -212,6 +216,7 @@ struct OnlineSettingsView: View {
     @AppStorage(TabSettings.onlineKey) private var onlineEnabled = true
     @AppStorage("online.region") private var region = "EG"
     @AppStorage("recentOnlineSearches") private var recentSearches = ""
+    @AppStorage("online.autoCacheAfter") private var autoCacheAfter = 3
 
     static let regions: [(code: String, name: String)] = [
         ("EG", "Egypt"), ("SA", "Saudi Arabia"), ("AE", "UAE"), ("KW", "Kuwait"), ("MA", "Morocco"),
@@ -235,6 +240,19 @@ struct OnlineSettingsView: View {
                     Button("Refresh Recommendations Now") {
                         Task { await OnlineFeed.shared.refreshIfNeeded(force: true) }
                     }
+                }
+                Section {
+                    Picker("Save Offline After", selection: $autoCacheAfter) {
+                        Text("Off").tag(0)
+                        Text("2 plays").tag(2)
+                        Text("3 plays").tag(3)
+                        Text("5 plays").tag(5)
+                    }
+                    .pickerStyle(.menu)
+                } header: {
+                    Text("Smart Offline Cache")
+                } footer: {
+                    Text("Songs you stream this many times are downloaded automatically, so they play without internet.")
                 }
                 Section("History") {
                     Button("Clear Recent Searches", role: .destructive) { recentSearches = "" }

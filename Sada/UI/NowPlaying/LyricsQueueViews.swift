@@ -16,7 +16,8 @@ struct LyricsView: View {
                                 synced: doc.isSynced,
                                 active: line.id == player.currentLyricIndex,
                                 passed: (player.currentLyricIndex ?? -1) > line.id,
-                                rtl: doc.isRTL
+                                rtl: doc.isRTL,
+                                line: line
                             )
                             .id(line.id)
                             .onTapGesture {
@@ -74,11 +75,24 @@ struct LyricLineView: View {
     let active: Bool
     let passed: Bool
     let rtl: Bool
+    var line: LyricLine? = nil
     @AppStorage(ThemeKeys.lyricsSize) private var scale: Double = 1.0
+    @AppStorage("lyrics.karaoke") private var karaoke = true
 
     var body: some View {
+        if karaoke, synced, active, let line, !text.isEmpty {
+            KaraokeLine(text: text, line: line, rtl: rtl, scale: scale)
+                .frame(maxWidth: .infinity, alignment: rtl ? .trailing : .leading)
+                .environment(\.layoutDirection, rtl ? .rightToLeft : .leftToRight)
+                .contentShape(Rectangle())
+        } else {
+            plain
+        }
+    }
+
+    private var plain: some View {
         let isBreak = text.isEmpty
-        Text(isBreak ? "•  •  •" : text)
+        return Text(isBreak ? "•  •  •" : text)
             .font(synced ? .system(size: 30 * scale, weight: .bold) : .system(size: 22 * scale, weight: .semibold))
             .multilineTextAlignment(rtl ? .trailing : .leading)
             .foregroundStyle(.white.opacity(!synced || active ? 1 : (passed ? 0.32 : 0.42)))
@@ -141,6 +155,52 @@ struct QueueView: View {
                 .scrollContentBackground(.hidden)
                 .environment(\.editMode, .constant(.active))
             }
+        }
+    }
+}
+
+/// The active lyric line fills with colour as it is sung (word by word when the file has word timings).
+struct KaraokeLine: View {
+    let text: String
+    let line: LyricLine
+    let rtl: Bool
+    let scale: Double
+    @Environment(PlayerEngine.self) private var player
+
+    private func progress(at t: Double) -> Double {
+        let start = line.time ?? 0
+        let end = line.end ?? (start + 4)
+        if !line.words.isEmpty {
+            let words = line.words
+            guard let i = words.lastIndex(where: { $0.time <= t }) else { return 0 }
+            let wordEnd = i + 1 < words.count ? words[i + 1].time : end
+            let frac = wordEnd > words[i].time ? (t - words[i].time) / (wordEnd - words[i].time) : 1
+            return min(1, (Double(i) + min(max(frac, 0), 1)) / Double(words.count))
+        }
+        // No word timings: sweep across the line, finishing a little before the next one.
+        let span = max((end - start) * 0.9, 0.5)
+        return min(max((t - start) / span, 0), 1)
+    }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !player.isPlaying)) { context in
+            let p = progress(at: player.displayTime(at: context.date))
+            let label = Text(text)
+                .font(.system(size: 30 * scale, weight: .bold))
+                .multilineTextAlignment(rtl ? .trailing : .leading)
+            label
+                .foregroundStyle(.white.opacity(0.42))
+                .overlay {
+                    GeometryReader { g in
+                        label
+                            .foregroundStyle(.white)
+                            .shadow(color: .white.opacity(0.35), radius: 6)
+                            .frame(width: g.size.width, height: g.size.height, alignment: rtl ? .trailing : .leading)
+                            .mask(alignment: .leading) {
+                                Rectangle().frame(width: g.size.width * p)
+                            }
+                    }
+                }
         }
     }
 }

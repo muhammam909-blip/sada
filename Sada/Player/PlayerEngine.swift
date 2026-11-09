@@ -21,7 +21,11 @@ final class PlayerEngine {
     private(set) var shuffle = false
     private(set) var repeatMode: RepeatMode = .off
     private(set) var currentArtwork: UIImage?
-    private(set) var palette: [Color] = ColorExtractor.fallback
+    private(set) var palette: [Color] = ColorExtractor.fallback {
+        didSet { artworkAccent = ColorExtractor.vibrant(from: currentArtwork) }
+    }
+    /// Bright colour taken from the current artwork (optional app-wide accent).
+    private(set) var artworkAccent: Color?
     private(set) var lyrics: LyricsDocument?
     private(set) var lyricsLoading = false
     private(set) var currentLyricIndex: Int?
@@ -54,6 +58,13 @@ final class PlayerEngine {
     @ObservationIgnored private var itemStatusObservation: NSKeyValueObservation?
     @ObservationIgnored private var configured = false
     @ObservationIgnored private var lastPersist = Date.distantPast
+    @ObservationIgnored private var lastTickAt = Date()
+
+    /// Smooth playback position between timer ticks (used by the karaoke lyrics).
+    func displayTime(at date: Date) -> Double {
+        guard isPlaying else { return currentTime }
+        return currentTime + date.timeIntervalSince(lastTickAt)
+    }
     @ObservationIgnored private var listenedSeconds: Double = 0
     @ObservationIgnored private var lastTickPosition: Double?
     @ObservationIgnored private var listeningTrackID: String?
@@ -445,6 +456,7 @@ final class PlayerEngine {
         }
         lastTickPosition = seconds
         currentTime = seconds
+        lastTickAt = Date()
         applyFade(at: seconds)
         updateLyricIndex()
         if Date().timeIntervalSince(lastPersist) > 10 { persistState() }

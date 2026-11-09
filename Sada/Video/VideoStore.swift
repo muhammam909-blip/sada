@@ -138,6 +138,9 @@ final class VideoStore {
         if result != videos {
             videos = result
             save()
+            SpotlightIndex.indexVideos()
+            publishWidget()
+            SadaShortcuts.updateAppShortcutParameters()
         }
         fetchMetadata()
     }
@@ -148,7 +151,7 @@ final class VideoStore {
         guard !fetching else { return }
         fetching = true
         Task {
-            defer { fetching = false; metadataStatus = nil }
+            defer { fetching = false; metadataStatus = nil; SpotlightIndex.indexVideos(); publishWidget() }
             // TV shows: one TVmaze lookup per show.
             for show in shows where force || show.episodes.contains(where: { !$0.metaFetched }) {
                 metadataStatus = "Getting info for \(show.name)…"
@@ -234,6 +237,7 @@ final class VideoStore {
     func setWatched(_ id: String, _ watched: Bool) {
         update(id) { $0.watched = watched; $0.position = 0 }
         save()
+        publishWidget()
     }
 
     /// Removes items from Continue Watching (keeps the files).
@@ -244,6 +248,7 @@ final class VideoStore {
             videos[i].lastWatched = nil
         }
         save()
+        publishWidget()
     }
 
     var watchedVideos: [VideoItem] { videos.filter(\.watched) }
@@ -294,5 +299,36 @@ final class VideoStore {
         }
         videos.removeAll { $0.id == video.id }
         save()
+    }
+}
+
+import WidgetKit
+
+extension VideoStore {
+    /// Updates the "Continue Watching" home-screen widget.
+    func publishWidget() {
+        let list = continueWatching.prefix(4)
+        let dir = SharedStore.artworkDirectory
+        let items: [VideoWidgetSnapshot.Item] = list.map { v in
+            var file: String?
+            if let dir, let src = artURL(v.stillFile ?? v.backdropFile ?? v.posterFile) {
+                let name = "v-\(v.id).jpg"
+                let dest = dir.appendingPathComponent(name)
+                if !FileManager.default.fileExists(atPath: dest.path),
+                   let img = ImageUtil.downsample(url: src, maxPixel: 600),
+                   let data = img.jpegData(compressionQuality: 0.8) {
+                    try? data.write(to: dest, options: .atomic)
+                }
+                if FileManager.default.fileExists(atPath: dest.path) { file = name }
+            }
+            let left = formatTime(max(v.duration - v.position, 0))
+            return VideoWidgetSnapshot.Item(
+                id: v.id,
+                title: v.kind == .episode ? (v.showName ?? v.title) : v.title,
+                subtitle: v.kind == .episode ? "\(v.episodeCode ?? "") · \(left) left" : "\(left) left",
+                progress: v.progress, imageFile: file)
+        }
+        SharedStore.saveVideos(VideoWidgetSnapshot(items: items))
+        WidgetCenter.shared.reloadTimelines(ofKind: "ContinueWatchingWidget")
     }
 }

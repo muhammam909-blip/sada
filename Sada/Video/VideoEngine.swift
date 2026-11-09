@@ -467,6 +467,7 @@ final class VideoPlayerController {
 
     func stop() {
         saveProgress()
+        VideoStore.shared.publishWidget()
         avPlayer.pause()
         stopVLCInBackground()
         vlcObservers.forEach { NotificationCenter.default.removeObserver($0) }
