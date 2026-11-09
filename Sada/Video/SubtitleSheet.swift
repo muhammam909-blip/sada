@@ -12,9 +12,9 @@ struct SubtitleSheet: View {
             List {
                 Section("Subtitles") {
                     row("Off", selected: controller.activeSubtitleName == nil) { controller.subtitlesOff() }
-                    ForEach(controller.legibleOptions, id: \.self) { option in
-                        row(option.displayName + " (built-in)", selected: controller.selectedLegible == option) {
-                            controller.selectLegible(option)
+                    ForEach(controller.subtitleTracks) { track in
+                        row(track.name + " (built-in)", selected: controller.selectedSubtitleTrack == track.id) {
+                            controller.selectSubtitleTrack(track)
                         }
                     }
                     ForEach(VideoStore.shared.subtitleFiles(for: controller.item), id: \.self) { url in
@@ -42,11 +42,11 @@ struct SubtitleSheet: View {
                     Text("Use Delay if the subtitles show too early (+) or too late (−).")
                 }
 
-                if controller.audibleOptions.count > 1 {
+                if controller.audioTracks.count > 1 {
                     Section("Audio Track") {
-                        ForEach(controller.audibleOptions, id: \.self) { option in
-                            row(option.displayName, selected: controller.selectedAudible == option) {
-                                controller.selectAudible(option)
+                        ForEach(controller.audioTracks) { track in
+                            row(track.name, selected: controller.selectedAudioTrack == track.id) {
+                                controller.selectAudioTrack(track)
                             }
                         }
                     }

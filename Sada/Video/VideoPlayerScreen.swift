@@ -16,6 +16,13 @@ struct VideoPlayerScreen: View {
     @State private var boosted = false
     @State private var tapFeedback: (side: Int, id: Int)?
     @AppStorage("subtitle.size") private var subtitleSize: Double = 20
+    @AppStorage("subtitle.background") private var subtitleBackground = true
+    @AppStorage("subtitle.yellow") private var subtitleYellow = false
+    @AppStorage("video.skip") private var skipSeconds = 10
+    @AppStorage("video.autoNext") private var autoNext = true
+    @AppStorage("video.gesture.brightness") private var brightnessGesture = true
+    @AppStorage("video.gesture.volume") private var volumeGesture = true
+    @AppStorage("video.gesture.seek") private var seekGesture = true
 
     enum DragMode { case seek, volume, brightness }
     enum HUD: Equatable {
@@ -30,8 +37,13 @@ struct VideoPlayerScreen: View {
         GeometryReader { geo in
             ZStack {
                 Color.black.ignoresSafeArea()
-                VideoSurface(controller: controller)
+                VideoCanvas(controller: controller)
                     .ignoresSafeArea()
+                    .onAppear { controller.viewSize = geo.size }
+                    .onChange(of: geo.size) { _, s in
+                        controller.viewSize = s
+                        controller.setGravity(controller.gravity)
+                    }
                 HiddenVolumeView().frame(width: 1, height: 1)
 
                 subtitles(geo: geo)
@@ -95,12 +107,12 @@ struct VideoPlayerScreen: View {
             Text(text)
                 .font(.system(size: subtitleSize, weight: .semibold))
                 .multilineTextAlignment(.center)
-                .foregroundStyle(.white)
+                .foregroundStyle(subtitleYellow ? Color.yellow : .white)
                 .shadow(color: .black, radius: 2)
                 .shadow(color: .black.opacity(0.9), radius: 4)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
-                .background(.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 6))
+                .background(.black.opacity(subtitleBackground ? 0.45 : 0), in: RoundedRectangle(cornerRadius: 6))
                 .frame(maxWidth: geo.size.width * 0.8)
                 .frame(maxHeight: .infinity, alignment: .bottom)
                 .padding(.bottom, showControls && !locked ? 96 : 28)
@@ -117,7 +129,7 @@ struct VideoPlayerScreen: View {
             .onTapGesture(count: 2) { location in
                 guard !locked else { return }
                 let side = location.x < geo.size.width / 2 ? -1 : 1
-                controller.skip(by: Double(side) * 10)
+                controller.skip(by: Double(side * skipSeconds))
                 withAnimation { tapFeedback = (side, (tapFeedback?.id ?? 0) + 1) }
                 Task {
                     try? await Task.sleep(for: .milliseconds(600))
@@ -131,20 +143,20 @@ struct VideoPlayerScreen: View {
             .gesture(dragGesture(geo: geo), isEnabled: !locked)
             .simultaneousGesture(MagnifyGesture().onEnded { value in
                 if value.magnification > 1.08 {
-                    controller.gravity = .resizeAspectFill
+                    controller.setGravity(.resizeAspectFill)
                 } else if value.magnification < 0.92 {
-                    controller.gravity = .resizeAspect
+                    controller.setGravity(.resizeAspect)
                 }
                 flash(.text(controller.gravityName))
             }, isEnabled: !locked)
             .onLongPressGesture(minimumDuration: 0.45, maximumDistance: 12, perform: {
                 guard !locked, controller.isPlaying else { return }
                 boosted = true
-                controller.player.rate = 2
+                controller.setBoost(true)
             }, onPressingChanged: { pressing in
                 if !pressing && boosted {
                     boosted = false
-                    controller.player.rate = controller.rate
+                    controller.setBoost(false)
                 }
             })
     }
@@ -154,12 +166,15 @@ struct VideoPlayerScreen: View {
             .onChanged { g in
                 if dragMode == nil {
                     if abs(g.translation.width) > abs(g.translation.height) {
+                        guard seekGesture else { return }
                         dragMode = .seek
                         dragStartValue = controller.currentTime
                     } else if g.startLocation.x < geo.size.width / 2 {
+                        guard brightnessGesture else { return }
                         dragMode = .brightness
                         dragStartValue = Double(DeviceControls.brightness)
                     } else {
+                        guard volumeGesture else { return }
                         dragMode = .volume
                         dragStartValue = Double(DeviceControls.volume)
                     }
@@ -246,8 +261,8 @@ struct VideoPlayerScreen: View {
 
     private func skipRipple(side: Int) -> some View {
         VStack(spacing: 4) {
-            Image(systemName: side < 0 ? "gobackward.10" : "goforward.10").font(.system(size: 34, weight: .semibold))
-            Text(side < 0 ? "−10s" : "+10s").font(.caption.weight(.bold))
+            Image(systemName: side < 0 ? "gobackward.\(skipSeconds)" : "goforward.\(skipSeconds)").font(.system(size: 34, weight: .semibold))
+            Text(side < 0 ? "−\(skipSeconds)s" : "+\(skipSeconds)s").font(.caption.weight(.bold))
         }
         .foregroundStyle(.white)
         .padding(22)
@@ -274,7 +289,7 @@ struct VideoPlayerScreen: View {
                         }
                     }
                     Spacer()
-                    if controller.pip != nil {
+                    if controller.pip != nil && controller.backend == .apple {
                         Button { controller.pip?.startPictureInPicture() } label: { Image(systemName: "pip.enter") }
                     }
                     Button { showSubtitleSheet = true; hideTask?.cancel() } label: {
@@ -290,14 +305,14 @@ struct VideoPlayerScreen: View {
 
                 // Center transport
                 HStack(spacing: 56) {
-                    Button { controller.skip(by: -10); scheduleHide() } label: { Image(systemName: "gobackward.10").font(.system(size: 34)) }
+                    Button { controller.skip(by: -Double(skipSeconds)); scheduleHide() } label: { Image(systemName: "gobackward.\(skipSeconds)").font(.system(size: 34)) }
                     Button { controller.togglePlay(); scheduleHide() } label: {
                         Image(systemName: controller.isPlaying ? "pause.fill" : "play.fill")
                             .font(.system(size: 54))
                             .contentTransition(.symbolEffect(.replace))
                             .frame(width: 70)
                     }
-                    Button { controller.skip(by: 10); scheduleHide() } label: { Image(systemName: "goforward.10").font(.system(size: 34)) }
+                    Button { controller.skip(by: Double(skipSeconds)); scheduleHide() } label: { Image(systemName: "goforward.\(skipSeconds)").font(.system(size: 34)) }
                 }
 
                 Spacer()
@@ -364,7 +379,7 @@ struct VideoPlayerScreen: View {
 
     @ViewBuilder private var endCard: some View {
         if let next = VideoStore.shared.nextEpisode(after: controller.item) {
-            UpNextCard(next: next) { controller.load(next) } onClose: { dismiss() }
+            UpNextCard(next: next, autoPlay: autoNext) { controller.load(next) } onClose: { dismiss() }
         }
     }
 
@@ -416,6 +431,7 @@ struct VideoScrubber: View {
 
 struct UpNextCard: View {
     let next: VideoItem
+    var autoPlay = true
     var onPlay: () -> Void
     var onClose: () -> Void
     @State private var countdown = 8
@@ -432,7 +448,7 @@ struct UpNextCard: View {
                 }
             }
             HStack {
-                Button { onPlay() } label: { Label("Play in \(countdown)", systemImage: "play.fill") }
+                Button { onPlay() } label: { Label(autoPlay ? "Play in \(countdown)" : "Play", systemImage: "play.fill") }
                     .adaptiveButton(prominent: true)
                 Button("Close", action: onClose).adaptiveButton()
             }
@@ -444,6 +460,7 @@ struct UpNextCard: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         .padding(28)
         .task {
+            guard autoPlay else { return }
             while countdown > 0 {
                 try? await Task.sleep(for: .seconds(1))
                 countdown -= 1

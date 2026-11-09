@@ -81,6 +81,7 @@ struct FolderBrowserView: View {
     @State private var renameText = ""
     @State private var deletingFolder: String?
     @State private var confirmDeleteSelected = false
+    @State private var importMode: ImportMode?
 
     private static let folderTag = "folder:"
     private func childPath(_ name: String) -> String { path.isEmpty ? name : path + "/" + name }
@@ -194,6 +195,9 @@ struct FolderBrowserView: View {
                     Menu {
                         Button { withAnimation { editMode = .active } } label: { Label("Select", systemImage: "checkmark.circle") }
                         Button { newFolderName = ""; askNewFolder = true } label: { Label("New Folder", systemImage: "folder.badge.plus") }
+                        if sourceID == nil {
+                            Button { importMode = .copyFiles } label: { Label("Copy Files & Folders Here…", systemImage: "square.and.arrow.down") }
+                        }
                     } label: {
                         Image(systemName: "ellipsis")
                     }
@@ -238,6 +242,7 @@ struct FolderBrowserView: View {
             }
         }
         .animation(.snappy, value: editMode.isEditing)
+        .addMusicImporter($importMode, destination: path)
         .alert("New Folder", isPresented: $askNewFolder) {
             TextField("Name", text: $newFolderName)
             Button("Create") { library.createFolder(sourceID: sourceID, parent: path, name: newFolderName) }

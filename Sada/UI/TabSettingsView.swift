@@ -67,26 +67,69 @@ struct TabSettingsView: View {
     }
 }
 
-/// Settings › Videos: subtitles and the OpenSubtitles account.
+/// Settings › Videos & Player.
 struct VideoSettingsView: View {
+    @AppStorage("video.engine") private var engine = VideoEngineChoice.auto.rawValue
+    @AppStorage("video.resume") private var resume = true
+    @AppStorage("video.autoNext") private var autoNext = true
+    @AppStorage("video.skip") private var skipSeconds = 10
+    @AppStorage("video.gesture.brightness") private var brightnessGesture = true
+    @AppStorage("video.gesture.volume") private var volumeGesture = true
+    @AppStorage("video.gesture.seek") private var seekGesture = true
     @AppStorage("subtitle.language") private var language = "ar"
     @AppStorage("subtitle.size") private var subtitleSize: Double = 20
+    @AppStorage("subtitle.background") private var subtitleBackground = true
+    @AppStorage("subtitle.yellow") private var subtitleYellow = false
     @AppStorage("os.apiKey") private var apiKey = ""
     @State private var username = ""
     @State private var password = ""
 
     var body: some View {
         Form {
+            Section {
+                Picker("Video Engine", selection: $engine) {
+                    ForEach(VideoEngineChoice.allCases) { Text($0.rawValue).tag($0.rawValue) }
+                }
+                .pickerStyle(.menu)
+            } header: {
+                Text("Playback")
+            } footer: {
+                Text("Automatic uses Apple's player for MP4/MOV (with Picture in Picture) and VLC for MKV, AVI and everything else. Always VLC plays every file with VLC.")
+            }
+
+            Section {
+                Toggle("Resume Where I Left Off", isOn: $resume)
+                Toggle("Play Next Episode Automatically", isOn: $autoNext)
+                Picker("Skip Buttons & Double-Tap", selection: $skipSeconds) {
+                    ForEach([5, 10, 15, 30], id: \.self) { Text("\($0) seconds").tag($0) }
+                }
+                .pickerStyle(.menu)
+            }
+
+            Section {
+                Toggle("Swipe Left Side for Brightness", isOn: $brightnessGesture)
+                Toggle("Swipe Right Side for Volume", isOn: $volumeGesture)
+                Toggle("Swipe Sideways to Seek", isOn: $seekGesture)
+            } header: {
+                Text("Gestures")
+            } footer: {
+                Text("Always on: double-tap to skip, pinch to fill the screen, hold for 2× speed.")
+            }
+
             Section("Subtitles") {
                 Picker("Preferred Language", selection: $language) {
                     Text("Arabic").tag("ar")
                     Text("English").tag("en")
                 }
+                .pickerStyle(.menu)
                 VStack(alignment: .leading) {
                     LabeledContent("Text Size", value: "\(Int(subtitleSize))")
                     Slider(value: $subtitleSize, in: 14...36, step: 1)
                 }
+                Toggle("Dark Background Behind Text", isOn: $subtitleBackground)
+                Toggle("Yellow Text", isOn: $subtitleYellow)
             }
+
             Section {
                 TextField("API Key", text: $apiKey)
                     .textInputAutocapitalization(.never)
@@ -98,18 +141,12 @@ struct VideoSettingsView: View {
                 SecureField("Password (optional)", text: $password)
                     .onChange(of: password) { _, v in Keychain.set(v, for: "os.password") }
             } header: {
-                Text("OpenSubtitles")
+                Text("Online Subtitles (OpenSubtitles)")
             } footer: {
-                Text("Online subtitles need a free API key: sign up at opensubtitles.com, then open Profile › API Consumers › New Consumer and paste the key here. Signing in raises the daily download limit. Your password is kept in the iPhone Keychain.")
-            }
-            Section {
-                LabeledContent("Plays now", value: "MP4, M4V, MOV")
-                LabeledContent("Coming next", value: "MKV, AVI, WebM")
-            } header: {
-                Text("Formats")
+                Text("Get a free API key at opensubtitles.com › Profile › API Consumers › New Consumer, and paste it here. Signing in raises the daily download limit. The password stays in the iPhone Keychain.")
             }
         }
-        .navigationTitle("Videos")
+        .navigationTitle("Videos & Player")
         .onAppear {
             username = Keychain.get("os.username") ?? ""
             password = Keychain.get("os.password") ?? ""

@@ -71,8 +71,6 @@ final class LibraryStore {
         for dir in [supportURL, artworkDir, lyricsDir] {
             try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         }
-        try? fm.createDirectory(at: documentsURL.appendingPathComponent("Music", isDirectory: true),
-                                withIntermediateDirectories: true)
         load()
     }
 
@@ -471,9 +469,10 @@ final class LibraryStore {
     // MARK: - Import (copy)
 
     /// Copies files and/or whole folders (with subfolders) into the app.
-    func importFiles(_ urls: [URL]) async {
+    /// Copies files and whole folders (keeping their subfolders and .srt files together).
+    func importFiles(_ urls: [URL], into folder: String = "") async {
         let fm = FileManager.default
-        let dest = documentsURL.appendingPathComponent("Music", isDirectory: true)
+        let dest = folder.isEmpty ? documentsURL : documentsURL.appendingPathComponent(folder, isDirectory: true)
         try? fm.createDirectory(at: dest, withIntermediateDirectories: true)
         let docsPath = documentsURL.resolvingSymlinksInPath().path
 

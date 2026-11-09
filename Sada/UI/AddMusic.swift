@@ -6,8 +6,11 @@ enum ImportMode {
 
     var types: [UTType] {
         switch self {
-        case .linkFolder, .copyFolder: [.folder]
-        case .copyFiles: [.audio, .movie, .video, .mpeg4Movie, .quickTimeMovie, .avi, UTType(filenameExtension: "mkv") ?? .movie, UTType(filenameExtension: "srt") ?? .plainText]
+        case .linkFolder: [.folder]
+        case .copyFolder, .copyFiles:
+            [.folder, .audio, .movie, .video, .mpeg4Movie, .quickTimeMovie, .avi,
+             UTType(filenameExtension: "mkv") ?? .movie, UTType(filenameExtension: "srt") ?? .plainText,
+             UTType(filenameExtension: "vtt") ?? .plainText]
         }
     }
 }
@@ -21,11 +24,8 @@ struct AddMusicMenu: View {
             Button { mode = .linkFolder } label: {
                 Label("Link a Folder (no copy)", systemImage: "link")
             }
-            Button { mode = .copyFolder } label: {
-                Label("Copy a Whole Folder", systemImage: "folder.badge.plus")
-            }
             Button { mode = .copyFiles } label: {
-                Label("Choose Songs or Videos", systemImage: "music.note.list")
+                Label("Copy Files & Folders", systemImage: "folder.badge.plus")
             }
         } label: {
             Image(systemName: "plus")
@@ -35,6 +35,7 @@ struct AddMusicMenu: View {
 
 struct AddMusicImporter: ViewModifier {
     @Binding var mode: ImportMode?
+    var destination: String = ""
     @Environment(LibraryStore.self) private var library
 
     func body(content: Content) -> some View {
@@ -51,7 +52,7 @@ struct AddMusicImporter: ViewModifier {
                 case .linkFolder:
                     for url in urls { await library.linkFolder(url) }
                 case .copyFolder, .copyFiles:
-                    await library.importFiles(urls)
+                    await library.importFiles(urls, into: destination)
                 }
             }
         }
@@ -59,8 +60,8 @@ struct AddMusicImporter: ViewModifier {
 }
 
 extension View {
-    func addMusicImporter(_ mode: Binding<ImportMode?>) -> some View {
-        modifier(AddMusicImporter(mode: mode))
+    func addMusicImporter(_ mode: Binding<ImportMode?>, destination: String = "") -> some View {
+        modifier(AddMusicImporter(mode: mode, destination: destination))
     }
 }
 

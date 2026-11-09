@@ -1,4 +1,4 @@
-﻿name: Build IPA
+name: Build IPA
 
 on:
   push:
@@ -40,6 +40,10 @@ jobs:
       - name: Package IPA (ad-hoc sign with entitlements so SideStore keeps the App Group)
         run: |
           APP=build/Build/Products/Release-iphoneos/Sada.app
+          if [ -d "$APP/Frameworks" ]; then
+            ls -la "$APP/Frameworks"
+            find "$APP/Frameworks" -maxdepth 1 \( -name "*.framework" -o -name "*.dylib" \) -exec codesign --force --sign - {} \;
+          fi
           codesign --force --sign - --entitlements SadaWidgets/SadaWidgets.entitlements "$APP/PlugIns/SadaWidgets.appex"
           codesign --force --sign - --entitlements Sada/Sada.entitlements "$APP"
           rm -rf Payload && mkdir Payload && cp -R "$APP" Payload/

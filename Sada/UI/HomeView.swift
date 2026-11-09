@@ -75,9 +75,9 @@ struct EmptyLibraryView: View {
             .adaptiveButton(prominent: true)
             .controlSize(.large)
             Button {
-                importMode = .copyFolder
+                importMode = .copyFiles
             } label: {
-                Label("Copy a Folder", systemImage: "folder.badge.plus")
+                Label("Copy Files & Folders", systemImage: "folder.badge.plus")
             }
             .adaptiveButton()
             ImportStatusBanner()

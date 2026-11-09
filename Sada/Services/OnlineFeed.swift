@@ -132,6 +132,11 @@ final class OnlineFeed {
         }
     }
 
+    func clearHistory() {
+        recentlyPlayed = []
+        UserDefaults.standard.removeObject(forKey: "online.recent")
+    }
+
     func noteStreamed(_ song: OnlineSong) {
         recentlyPlayed.removeAll { $0.id == song.id }
         recentlyPlayed.insert(song, at: 0)
@@ -169,7 +174,9 @@ final class OnlineFeed {
 
         var built: [FeedSection] = []
 
-        async let trending = (try? await YTMusic.charts(country: "EG")) ?? []
+        let region = UserDefaults.standard.string(forKey: "online.region") ?? "EG"
+        let regionName = OnlineSettingsView.regions.first { $0.code == region }?.name ?? region
+        async let trending = (try? await YTMusic.charts(country: region)) ?? []
         async let fallbackTrending = (try? await YTMusicSearch.search("أحدث الأغاني المصرية")) ?? []
 
         // Matching your taste: radios of your top songs, mixed, without songs you already have.
@@ -202,7 +209,7 @@ final class OnlineFeed {
         var trend = await trending
         if trend.isEmpty { trend = await fallbackTrending }
         if !trend.isEmpty {
-            built.append(FeedSection(id: "trending-eg", title: "Trending in Egypt", subtitle: "Top songs this week", songs: Array(trend.prefix(30))))
+            built.append(FeedSection(id: "trending-\(region)", title: "Trending in \(regionName)", subtitle: "Top songs this week", songs: Array(trend.prefix(30))))
         }
 
         for (artist, songs) in radios.prefix(3) {
