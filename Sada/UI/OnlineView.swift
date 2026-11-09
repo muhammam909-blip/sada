@@ -13,6 +13,7 @@ struct OnlineView: View {
     @State private var error: String?
     @State private var searchedFor = ""
     @FocusState private var focused: Bool
+    @State private var showSettings = false
 
     private var recent: [String] { recentRaw.split(separator: "\n").map(String.init) }
     private var showingSearch: Bool { focused || !searchedFor.isEmpty || !query.isEmpty }
@@ -37,6 +38,12 @@ struct OnlineView: View {
             }
             .navigationTitle("Online")
             .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                }
+            }
+            .sheet(isPresented: $showSettings) { SettingsPageSheet { OnlineSettingsView() } }
             .navigationDestination(for: Genre.self) { GenreView(genre: $0) }
             .navigationDestination(for: FeedSection.self) { FeedSectionView(section: $0) }
             .task(id: query) {

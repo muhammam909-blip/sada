@@ -48,7 +48,13 @@ struct FoldersTab: View {
             }
             .libraryDestinations()
             .addMusicImporter($importMode)
-            .sheet(isPresented: $showSettings) { SettingsView() }
+            .sheet(isPresented: $showSettings) {
+                if space == .videos && !videosSeparate {
+                    SettingsPageSheet { VideoSettingsView() }
+                } else {
+                    SettingsPageSheet { FoldersSettingsPage() }
+                }
+            }
         }
     }
 }

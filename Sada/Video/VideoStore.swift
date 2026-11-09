@@ -236,6 +236,23 @@ final class VideoStore {
         save()
     }
 
+    /// Removes items from Continue Watching (keeps the files).
+    func clearProgress(_ ids: [String]? = nil) {
+        let targets = Set(ids ?? continueWatching.map(\.id))
+        for i in videos.indices where targets.contains(videos[i].id) {
+            videos[i].position = 0
+            videos[i].lastWatched = nil
+        }
+        save()
+    }
+
+    var watchedVideos: [VideoItem] { videos.filter(\.watched) }
+
+    /// Deletes the files of everything you finished watching.
+    func deleteWatched() {
+        for v in watchedVideos { delete(v) }
+    }
+
     func setWatched(show: VideoShow, _ watched: Bool) {
         for ep in show.episodes { update(ep.id) { $0.watched = watched; $0.position = 0 } }
         save()

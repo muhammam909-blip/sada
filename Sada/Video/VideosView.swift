@@ -48,29 +48,14 @@ struct VideosView: View {
     @State private var store = VideoStore.shared
     @Environment(AppRouter.self) private var router
     @State private var confirmDuplicates = false
+    @State private var confirmDeleteWatched = false
+    @State private var showVideoSettings = false
     @AppStorage("videos.space") private var space = "library"
     @AppStorage(TabSettings.onlineKey) private var onlineEnabled = true
 
     var body: some View {
-        Group {
-            if space == "discover" && onlineEnabled {
-                DiscoverView()
-            } else {
-                libraryBody
-            }
-        }
-        .safeAreaInset(edge: .top) {
-            if onlineEnabled {
-                Picker("Videos", selection: $space) {
-                    Text("My Videos").tag("library")
-                    Text("Discover").tag("discover")
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.bottom, 6)
-            }
-        }
-        .navigationTitle("Videos")
+        libraryBody
+            .navigationTitle("Videos")
     }
 
     private var libraryBody: some View {
@@ -92,7 +77,13 @@ struct VideosView: View {
                 let continueList = store.continueWatching
                 if !continueList.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Continue Watching").font(.title2.bold()).padding(.horizontal)
+                        HStack {
+                            Text("Continue Watching").font(.title2.bold())
+                            Spacer()
+                            Button("Clear") { withAnimation { store.clearProgress() } }
+                                .font(.subheadline.weight(.medium))
+                        }
+                        .padding(.horizontal)
                         ScrollView(.horizontal, showsIndicators: false) {
                             LazyHStack(spacing: 14) {
                                 ForEach(continueList) { v in
@@ -142,7 +133,11 @@ struct VideosView: View {
                 Menu {
                     Button { Task { await store.rescan() } } label: { Label("Rescan", systemImage: "arrow.clockwise") }
                     Button { store.fetchMetadata(force: true) } label: { Label("Refresh Posters & Info", systemImage: "photo.on.rectangle") }
+                    Button { withAnimation { store.clearProgress() } } label: { Label("Clear Continue Watching", systemImage: "clock.arrow.circlepath") }
                     Button(role: .destructive) { confirmDuplicates = true } label: { Label("Remove Duplicate Copies", systemImage: "square.on.square.dashed") }
+                    Button(role: .destructive) { confirmDeleteWatched = true } label: { Label("Delete Watched Videos…", systemImage: "eye.slash") }
+                    Divider()
+                    Button { showVideoSettings = true } label: { Label("Video Settings", systemImage: "gearshape") }
                 } label: { Image(systemName: "ellipsis") }
             }
         }
@@ -159,6 +154,17 @@ struct VideosView: View {
             }
         } message: {
             Text("The file (and its downloaded subtitles) is removed from your iPhone. This can't be undone.")
+        }
+        .confirmationDialog("Delete \(store.watchedVideos.count) watched videos?", isPresented: $confirmDeleteWatched, titleVisibility: .visible) {
+            Button("Delete Watched", role: .destructive) { store.deleteWatched() }
+        } message: {
+            Text("Every movie and episode marked as watched is removed from your iPhone. This can't be undone.")
+        }
+        .sheet(isPresented: $showVideoSettings) {
+            NavigationStack {
+                VideoSettingsView()
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showVideoSettings = false } } }
+            }
         }
         .confirmationDialog("Remove duplicate copies?", isPresented: $confirmDuplicates, titleVisibility: .visible) {
             Button("Remove \(store.duplicates.count) Duplicates", role: .destructive) { store.removeDuplicates() }
@@ -267,6 +273,11 @@ struct VideoMenu: View {
 
     var body: some View {
         Button { router.playingVideo = video } label: { Label(video.isInProgress ? "Resume" : "Play", systemImage: "play.fill") }
+        if video.isInProgress {
+            Button { VideoStore.shared.clearProgress([video.id]) } label: {
+                Label("Remove from Continue Watching", systemImage: "xmark.circle")
+            }
+        }
         Button { VideoStore.shared.setWatched(video.id, !video.watched) } label: {
             Label(video.watched ? "Mark as Unwatched" : "Mark as Watched", systemImage: video.watched ? "eye.slash" : "eye")
         }

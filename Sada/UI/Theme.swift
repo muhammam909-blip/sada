@@ -65,6 +65,19 @@ struct AdaptiveButtonStyle: ViewModifier {
     }
 }
 
+/// Opens one settings page (the one for the current tab) as a sheet.
+struct SettingsPageSheet<Page: View>: View {
+    @Environment(\.dismiss) private var dismiss
+    @ViewBuilder let page: () -> Page
+
+    var body: some View {
+        NavigationStack {
+            page()
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+    }
+}
+
 /// Cards shrink slightly while pressed (Spotify / Anghami feel).
 struct PressableStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {

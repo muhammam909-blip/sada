@@ -248,6 +248,23 @@ struct OnlineSettingsView: View {
     }
 }
 
+/// Folders tab settings: folders plus a shortcut to everything else.
+struct FoldersSettingsPage: View {
+    var body: some View {
+        LibrarySettingsView()
+            .safeAreaInset(edge: .bottom) {
+                NavigationLink {
+                    MusicSettingsView()
+                } label: {
+                    Label("Music Player Settings", systemImage: "music.note")
+                        .frame(maxWidth: .infinity)
+                }
+                .adaptiveButton()
+                .padding()
+            }
+    }
+}
+
 // MARK: - Library
 
 struct LibrarySettingsView: View {
