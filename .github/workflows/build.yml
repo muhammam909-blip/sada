@@ -70,6 +70,7 @@ jobs:
               "versions": [{
                 "version": "${VERSION}",
                 "buildVersion": "${{ github.run_number }}",
+                "localizedDescription": "$(git log -1 --pretty=%s | sed 's/"/\\"/g')",
                 "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
                 "downloadURL": "https://github.com/${REPO}/releases/download/build-${{ github.run_number }}/Sada.ipa",
                 "size": ${SIZE},
