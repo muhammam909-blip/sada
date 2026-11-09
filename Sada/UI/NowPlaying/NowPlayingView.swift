@@ -113,7 +113,7 @@ struct NowPlayingView: View {
                     .padding(.vertical, 22)
                 HStack(spacing: 10) {
                     Image(systemName: "speaker.fill").font(.caption)
-                    SystemVolumeSlider().frame(height: 30)
+                    SystemVolumeSlider().frame(maxWidth: .infinity).frame(height: 30)
                     Image(systemName: "speaker.wave.3.fill").font(.caption)
                 }
                 .foregroundStyle(.white.opacity(0.6))
@@ -123,6 +123,7 @@ struct NowPlayingView: View {
             }
             .padding(.horizontal, 28)
             .foregroundStyle(.white)
+            .containerRelativeFrame(.horizontal) // keep the player exactly screen-wide
         }
         .offset(y: dragY)
         .scaleEffect(1 - min(dragY / 3000, 0.06))

@@ -9,8 +9,11 @@ struct RootView: View {
     @AppStorage(TabSettings.onlineKey) private var onlineEnabled = true
     @AppStorage(TabSettings.videosTabKey) private var videosSeparate = false
     @AppStorage("tabs.nameRevision") private var nameRevision = 0
+    @AppStorage(TabSettings.hiddenKey) private var hiddenTabs = ""
 
-    private var tabs: [AppTab] { TabSettings.visible(order: tabOrder, online: onlineEnabled, videosSeparate: videosSeparate) }
+    private var tabs: [AppTab] {
+        TabSettings.visible(order: tabOrder, online: onlineEnabled, videosSeparate: videosSeparate, hidden: hiddenTabs)
+    }
 
     @ViewBuilder private func content(for tab: AppTab) -> some View {
         switch tab {

@@ -153,8 +153,10 @@ final class VideoStore {
             for show in shows where force || show.episodes.contains(where: { !$0.metaFetched }) {
                 metadataStatus = "Getting info for \(show.name)…"
                 if let info = await VideoMetadata.show(named: show.name) {
-                    let poster = await download(info.posterURL, name: "show-\(LibraryStore.makeID(show.id))-p.jpg")
-                    let backdrop = await download(info.backdropURL, name: "show-\(LibraryStore.makeID(show.id))-b.jpg")
+                    let extra = (info.posterURL == nil || info.backdropURL == nil)
+                        ? await VideoMetadata.cinemeta(type: "series", title: show.name, year: nil) : nil
+                    let poster = await download(info.posterURL ?? extra?.posterURL, name: "show-\(LibraryStore.makeID(show.id))-p.jpg")
+                    let backdrop = await download(info.backdropURL ?? extra?.backdropURL, name: "show-\(LibraryStore.makeID(show.id))-b.jpg")
                     for ep in show.episodes {
                         let detail = info.episodes["\(ep.season ?? 1)x\(ep.episode ?? 0)"]
                         let still = await download(detail?.imageURL, name: "ep-\(ep.id).jpg")
@@ -179,12 +181,15 @@ final class VideoStore {
                 save()
             }
             // Movies: Apple's catalogue (works for Arabic films too).
-            for movie in movies where force || !movie.metaFetched {
+            for movie in movies where force || !movie.metaFetched || movie.posterFile == nil {
                 metadataStatus = "Getting info for \(movie.title)…"
                 if let info = await VideoMetadata.movie(title: movie.title, year: movie.year) {
                     let poster = await download(info.posterURL, name: "movie-\(movie.id)-p.jpg")
+                    let backdrop = await download(info.backdropURL, name: "movie-\(movie.id)-b.jpg")
                     update(movie.id) {
                         $0.posterFile = poster ?? $0.posterFile
+                        $0.backdropFile = backdrop ?? $0.backdropFile
+                        $0.rating = info.rating ?? $0.rating
                         $0.overview = info.overview
                         $0.genres = info.genres
                         $0.year = $0.year ?? info.year

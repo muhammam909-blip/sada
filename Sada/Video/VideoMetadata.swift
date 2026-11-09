@@ -23,8 +23,31 @@ enum VideoMetadata {
         let title: String
         let overview: String?
         let posterURL: URL?
+        var backdropURL: URL? = nil
         let genres: String?
         let year: Int?
+        var rating: Double? = nil
+    }
+
+    /// Cinemeta (the catalogue Stremio/Nuvio use): sharp posters + backgrounds for movies and series, no key.
+    static func cinemeta(type: String, title: String, year: Int?) async -> MovieInfo? {
+        struct R: Decodable { let metas: [MetaPreview]? }
+        let q = title.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? title
+        guard let url = URL(string: "https://v3-cinemeta.strem.io/catalog/\(type)/top/search=\(q).json"),
+              case let (data, 200)? = await HTTP.get(url),
+              let metas = try? JSONDecoder().decode(R.self, from: data).metas, !metas.isEmpty else { return nil }
+        let key = TitleCleaner.cleanForMatching(title)
+        func yearOf(_ m: MetaPreview) -> Int? { m.releaseInfo.flatMap { Int($0.prefix(4)) } }
+        let named = metas.filter {
+            let n = TitleCleaner.cleanForMatching($0.name)
+            return n == key || n.contains(key) || key.contains(n)
+        }
+        let pick = named.first { m in year.map { y in yearOf(m).map { abs($0 - y) <= 1 } ?? true } ?? true } ?? named.first
+        guard let m = pick else { return nil }
+        return MovieInfo(title: m.name, overview: m.description, posterURL: m.poster.flatMap(URL.init(string:)),
+                         backdropURL: m.background.flatMap(URL.init(string:)),
+                         genres: m.genres?.prefix(3).joined(separator: ", "), year: yearOf(m),
+                         rating: m.imdbRating.flatMap(Double.init))
     }
 
     private struct TVMShow: Decodable {
@@ -116,6 +139,7 @@ enum VideoMetadata {
     }
 
     static func movie(title: String, year: Int?) async -> MovieInfo? {
+        if let c = await cinemeta(type: "movie", title: title, year: year), c.posterURL != nil { return c }
         let countries = title.containsArabic ? ["eg", "ae", "us"] : ["us", "eg"]
         for country in countries {
             guard let url = HTTP.url("https://itunes.apple.com/search", ["term": title, "entity": "movie", "limit": "10", "country": country]),

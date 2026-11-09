@@ -48,18 +48,30 @@ enum VideoPresenter {
         }
     }
 
+    /// Fades the player to black, rotates back to portrait behind the black, then dismisses.
+    /// Doing the rotation and the dismissal at the same time caused a flicker.
     static func dismiss() {
         guard let vc = host else { return }
         host = nil
-        AppDelegate.orientationMask = .portrait
-        var root = scene?.keyWindow?.rootViewController
-        while let r = root {
-            r.setNeedsUpdateOfSupportedInterfaceOrientations()
-            root = r.presentedViewController
+        let cover = UIView(frame: vc.view.bounds)
+        cover.backgroundColor = .black
+        cover.alpha = 0
+        cover.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        vc.view.addSubview(cover)
+        UIView.animate(withDuration: 0.15, animations: { cover.alpha = 1 }) { _ in
+            let wasLandscape = vc.view.bounds.width > vc.view.bounds.height
+            AppDelegate.orientationMask = .portrait
+            var root = scene?.keyWindow?.rootViewController
+            while let r = root {
+                r.setNeedsUpdateOfSupportedInterfaceOrientations()
+                root = r.presentedViewController
+            }
+            scene?.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait)) { _ in }
+            DispatchQueue.main.asyncAfter(deadline: .now() + (wasLandscape ? 0.45 : 0.05)) {
+                vc.dismiss(animated: true)
+                AppRouter.shared.playingVideo = nil
+            }
         }
-        scene?.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait)) { _ in }
-        vc.dismiss(animated: true)
-        AppRouter.shared.playingVideo = nil
     }
 }
 
@@ -339,7 +351,7 @@ struct VideoPlayerScreen: View {
                 // Top bar
                 HStack(spacing: 14) {
                     Button { close() } label: {
-                        Image(systemName: "xmark").font(.headline).frame(width: 44, height: 44)
+                        Image(systemName: "xmark").font(.title2.weight(.semibold)).frame(width: 56, height: 56)
                     }
                     .background(.black.opacity(0.38), in: Circle())
                     Spacer()

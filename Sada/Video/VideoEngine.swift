@@ -317,7 +317,11 @@ final class VideoPlayerController {
                 avPlayer.play()
                 avPlayer.rate = rate
             } else {
+                // Re-anchor to the current position on resume so the sound starts with the picture
+                // (VLC otherwise shows video a few milliseconds before the audio catches up).
+                let position = vlc.time
                 vlc.play()
+                vlc.time = position
             }
         }
     }

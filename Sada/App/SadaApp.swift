@@ -111,14 +111,19 @@ enum TabSettings {
         return tabs
     }
 
-    static func visible(order raw: String, online: Bool, videosSeparate: Bool) -> [AppTab] {
-        order(raw).filter { tab in
+    static let hiddenKey = "tabs.hidden"
+
+    static func visible(order raw: String, online: Bool, videosSeparate: Bool, hidden: String = "") -> [AppTab] {
+        let hiddenSet = Set(hidden.split(separator: ",").map(String.init))
+        let list = order(raw).filter { tab in
+            if hiddenSet.contains(tab.rawValue) { return false }
             switch tab {
-            case .online: online
-            case .videos: videosSeparate
-            default: true
+            case .online: return online
+            case .videos: return videosSeparate
+            default: return true
             }
         }
+        return list.isEmpty ? [.folders] : list
     }
 
     static func name(_ tab: AppTab) -> String {

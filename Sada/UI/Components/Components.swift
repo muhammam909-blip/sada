@@ -234,9 +234,16 @@ struct SystemVolumeSlider: UIViewRepresentable {
     func makeUIView(context: Context) -> MPVolumeView {
         let view = MPVolumeView(frame: .zero)
         view.tintColor = .white
+        // Never let the slider push the layout wider than the screen.
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
         return view
     }
     func updateUIView(_ uiView: MPVolumeView, context: Context) {}
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: MPVolumeView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 200, height: proposal.height ?? 30)
+    }
 }
 
 struct AirPlayButton: UIViewRepresentable {

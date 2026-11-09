@@ -6,18 +6,30 @@ struct TabSettingsView: View {
     @AppStorage(TabSettings.onlineKey) private var onlineEnabled = true
     @AppStorage(TabSettings.videosTabKey) private var videosSeparate = false
     @AppStorage("tabs.nameRevision") private var nameRevision = 0
+    @AppStorage(TabSettings.hiddenKey) private var hiddenRaw = ""
     @State private var names: [AppTab: String] = [:]
+
+    /// One switch per tab. Online and Videos keep their own settings keys.
+    private func shownBinding(_ tab: AppTab) -> Binding<Bool> {
+        switch tab {
+        case .online: return $onlineEnabled
+        case .videos: return $videosSeparate
+        default:
+            return Binding(
+                get: { !hiddenRaw.split(separator: ",").map(String.init).contains(tab.rawValue) },
+                set: { show in
+                    var set = Set(hiddenRaw.split(separator: ",").map(String.init))
+                    if show { set.remove(tab.rawValue) } else { set.insert(tab.rawValue) }
+                    hiddenRaw = set.sorted().joined(separator: ",")
+                }
+            )
+        }
+    }
 
     private var order: [AppTab] { TabSettings.order(orderRaw) }
 
     var body: some View {
         List {
-            Section {
-                Toggle("Online Music", isOn: $onlineEnabled)
-                Toggle("Videos as a Separate Tab", isOn: $videosSeparate)
-            } footer: {
-                Text("Turn off Online Music to hide streaming, online search and recommendations. Without a separate Videos tab, movies & series live under Folders › Videos.")
-            }
 
             Section {
                 ForEach(order) { tab in
@@ -32,9 +44,7 @@ struct TabSettingsView: View {
                             }
                         ))
                         Spacer()
-                        if (tab == .online && !onlineEnabled) || (tab == .videos && !videosSeparate) {
-                            Text("Hidden").font(.caption).foregroundStyle(.secondary)
-                        }
+                        Toggle("Show", isOn: shownBinding(tab)).labelsHidden()
                     }
                 }
                 .onMove { from, to in
@@ -45,7 +55,7 @@ struct TabSettingsView: View {
             } header: {
                 Text("Order & Names")
             } footer: {
-                Text("Drag to reorder. Tap a name to rename it; leave it empty for the default. Search always stays last.")
+                Text("Switch a tab off to hide it, on to bring it back. Drag to reorder and tap a name to rename it. Search always stays last.")
             }
 
             Section {
