@@ -23,28 +23,38 @@ struct RootView: View {
     }
     @Namespace private var namespace
 
+    /// Classic design: the mini player floats just above the tab bar on every tab.
+    @ViewBuilder private var miniPlayer: some View {
+        if player.current != nil {
+            MiniPlayerView { router.showNowPlaying = true }
+                .frame(height: 58)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.primary.opacity(0.08), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
+                .matchedTransitionSource(id: "nowPlaying", in: namespace)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 6)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
     var body: some View {
         @Bindable var router = router
         let _ = nameRevision
         TabView(selection: $router.tab) {
             ForEach(tabs) { tab in
                 Tab(TabSettings.name(tab), systemImage: tab.icon, value: tab) {
-                    content(for: tab)
+                    content(for: tab).safeAreaInset(edge: .bottom) { miniPlayer }
                 }
             }
             Tab(TabSettings.name(.search), systemImage: "magnifyingglass", value: AppTab.search, role: .search) {
-                SearchView()
+                SearchView().safeAreaInset(edge: .bottom) { miniPlayer }
             }
         }
         .onAppear { if !tabs.contains(router.tab) { router.tab = tabs.first ?? .folders } }
         .onChange(of: tabs) { _, new in if !new.contains(router.tab) && router.tab != .search { router.tab = new.first ?? .folders } }
         .fullScreenCover(item: $router.playingVideo) { video in
             VideoPlayerScreen(item: video)
-        }
-        .tabBarMinimizeBehavior(.onScrollDown)
-        .tabViewBottomAccessory {
-            MiniPlayerView { router.showNowPlaying = true }
-                .matchedTransitionSource(id: "nowPlaying", in: namespace)
         }
         .trackActionSheets(enabled: !router.showNowPlaying)
         .fullScreenCover(isPresented: $router.showNowPlaying) {

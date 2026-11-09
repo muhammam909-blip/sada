@@ -3,7 +3,7 @@ import SwiftUI
 /// Look & feel options (Settings › Appearance).
 enum ThemeKeys {
     static let accent = "accentHex"
-    static let glass = "glassEnabled"
+    static let glass = "glassEnabled.v2"
     static let npBackground = "npBackground"
     static let lyricsSize = "lyricsSize"
     static let libraryStyle = "libraryStyle"
@@ -46,7 +46,7 @@ extension Color {
 /// Uses Liquid Glass buttons when enabled, classic filled/bordered ones otherwise.
 struct AdaptiveButtonStyle: ViewModifier {
     var prominent = false
-    @AppStorage(ThemeKeys.glass) private var glass = true
+    @AppStorage(ThemeKeys.glass) private var glass = false
 
     func body(content: Content) -> some View {
         if glass {

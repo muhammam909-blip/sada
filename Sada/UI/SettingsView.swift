@@ -147,9 +147,9 @@ struct AppearanceSettingsView: View {
             }
 
             Section {
-                LabeledContent("Liquid Glass", value: "iOS system style")
+                LabeledContent("Design", value: "Classic (Liquid Glass off)")
             } footer: {
-                Text("The tab bar, menus and sheets are drawn by iOS. Turning Liquid Glass off for the whole app is a build setting, not a live switch — ask for the Classic build if you prefer the older solid look.")
+                Text("MHM uses the classic solid iOS design everywhere. This is built into the app; ask if you want Liquid Glass back.")
             }
         }
         .navigationTitle("Appearance")
