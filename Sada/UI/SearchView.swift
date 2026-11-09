@@ -6,6 +6,7 @@ struct SearchView: View {
     @Environment(PlayerEngine.self) private var player
     @Environment(AppRouter.self) private var router
     @State private var query = ""
+    @AppStorage(TabSettings.onlineKey) private var onlineEnabled = true
 
     var body: some View {
         NavigationStack {
@@ -74,12 +75,14 @@ struct SearchView: View {
                     }
                 }
             }
-            Section {
-                Button {
-                    router.onlineQuery = query
-                    router.tab = .online
-                } label: {
-                    Label("Search “\(query)” Online", systemImage: "globe")
+            if onlineEnabled {
+                Section {
+                    Button {
+                        router.onlineQuery = query
+                        router.tab = .online
+                    } label: {
+                        Label("Search “\(query)” Online", systemImage: "globe")
+                    }
                 }
             }
             if songs.isEmpty && albums.isEmpty && artists.isEmpty {

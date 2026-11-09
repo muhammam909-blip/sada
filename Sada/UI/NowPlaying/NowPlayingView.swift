@@ -126,10 +126,22 @@ struct NowPlayingView: View {
         }
         .offset(y: dragY)
         .scaleEffect(1 - min(dragY / 3000, 0.06))
-        .clipShape(RoundedRectangle(cornerRadius: dragY > 0 ? 40 : 0, style: .continuous))
+        .clipShape(DragCardShape(radius: dragY > 0 ? 44 : 0, active: dragY > 0))
         .environment(\.colorScheme, .dark)
         .sensoryFeedback(.impact(weight: .light), trigger: player.current?.id)
         .onChange(of: player.current == nil) { _, empty in if empty { dismiss() } }
+    }
+}
+
+/// Clips nothing at rest (so the player fills the whole screen, safe areas included);
+/// while dragging it becomes a rounded card.
+struct DragCardShape: Shape {
+    var radius: CGFloat
+    var active: Bool
+
+    func path(in rect: CGRect) -> Path {
+        let expanded = rect.insetBy(dx: active ? 0 : -400, dy: active ? -80 : -400)
+        return RoundedRectangle(cornerRadius: radius, style: .continuous).path(in: expanded)
     }
 }
 

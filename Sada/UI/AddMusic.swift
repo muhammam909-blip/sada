@@ -7,7 +7,7 @@ enum ImportMode {
     var types: [UTType] {
         switch self {
         case .linkFolder, .copyFolder: [.folder]
-        case .copyFiles: [.audio]
+        case .copyFiles: [.audio, .movie, .video, .mpeg4Movie, .quickTimeMovie, .avi, UTType(filenameExtension: "mkv") ?? .movie, UTType(filenameExtension: "srt") ?? .plainText]
         }
     }
 }
@@ -25,7 +25,7 @@ struct AddMusicMenu: View {
                 Label("Copy a Whole Folder", systemImage: "folder.badge.plus")
             }
             Button { mode = .copyFiles } label: {
-                Label("Choose Songs", systemImage: "music.note.list")
+                Label("Choose Songs or Videos", systemImage: "music.note.list")
             }
         } label: {
             Image(systemName: "plus")

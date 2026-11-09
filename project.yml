@@ -1,4 +1,4 @@
-﻿name: Sada
+name: Sada
 options:
   bundleIdPrefix: com.hammam
   deploymentTarget:
@@ -9,7 +9,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.4.0"
+    MARKETING_VERSION: "0.5.0"
     CURRENT_PROJECT_VERSION: "1"
     CODE_SIGN_STYLE: Manual
     DEVELOPMENT_TEAM: ""
@@ -49,6 +49,8 @@ targets:
         UIApplicationSupportsIndirectInputEvents: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         UIBackgroundModes:
           - audio
         NSSupportsLiveActivities: true

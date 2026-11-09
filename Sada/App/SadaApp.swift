@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct SadaApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var library = LibraryStore.shared
     @State private var player = PlayerEngine.shared
     @State private var router = AppRouter.shared
@@ -43,7 +44,8 @@ final class AppRouter {
     var showNowPlaying = false
     var trackSheet: TrackSheet?
     var deleteCandidate: Track?
-    var tab: AppTab = .home
+    var tab: AppTab = .online
+    var playingVideo: VideoItem?
     var onlineQuery: String?
 }
 
@@ -69,8 +71,58 @@ enum TrackSheet: Identifiable {
     }
 }
 
-enum AppTab: Hashable {
-    case home, library, online, search
+enum AppTab: String, Hashable, CaseIterable, Identifiable {
+    case online, folders, videos, library, search
+    var id: String { rawValue }
+
+    var defaultName: String {
+        switch self {
+        case .online: "Home"
+        case .folders: "Folders"
+        case .videos: "Videos"
+        case .library: "Library"
+        case .search: "Search"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .online: "house.fill"
+        case .folders: "folder.fill"
+        case .videos: "play.rectangle.fill"
+        case .library: "square.stack.fill"
+        case .search: "magnifyingglass"
+        }
+    }
+}
+
+/// Tab order / names / visibility (Settings › Tabs).
+enum TabSettings {
+    static let orderKey = "tabs.order"
+    static let onlineKey = "online.enabled"
+    static let videosTabKey = "tabs.videosSeparate"
+    static let defaultOrder = "online,folders,library,videos"
+
+    static func order(_ raw: String) -> [AppTab] {
+        var tabs = raw.split(separator: ",").compactMap { AppTab(rawValue: String($0)) }.filter { $0 != .search }
+        for t in [AppTab.online, .folders, .library, .videos] where !tabs.contains(t) { tabs.append(t) }
+        return tabs
+    }
+
+    static func visible(order raw: String, online: Bool, videosSeparate: Bool) -> [AppTab] {
+        order(raw).filter { tab in
+            switch tab {
+            case .online: online
+            case .videos: videosSeparate
+            default: true
+            }
+        }
+    }
+
+    static func name(_ tab: AppTab) -> String {
+        let custom = UserDefaults.standard.string(forKey: "tabs.name.\(tab.rawValue)")?.trimmingCharacters(in: .whitespaces) ?? ""
+        return custom.isEmpty ? tab.defaultName : custom
+    }
 }
 
 enum Appearance: String, CaseIterable, Identifiable {

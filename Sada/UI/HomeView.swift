@@ -1,21 +1,41 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Home = the files in On My iPhone › MHM, shown as folders (nPlayer style).
-struct HomeView: View {
+/// Folders tab: Music (On My iPhone, nPlayer style) and Videos (movies & series).
+struct FoldersTab: View {
+    enum Space: String, CaseIterable, Identifiable {
+        case music = "Music", videos = "Videos"
+        var id: String { rawValue }
+    }
+
     @Environment(LibraryStore.self) private var library
     @State private var importMode: ImportMode?
     @State private var showSettings = false
+    @AppStorage("folders.space") private var space: Space = .music
+    @AppStorage(TabSettings.videosTabKey) private var videosSeparate = false
 
     var body: some View {
         NavigationStack {
             Group {
-                if library.tracks.isEmpty && library.linkedFolders.isEmpty && !library.isScanning {
+                if space == .videos && !videosSeparate {
+                    VideosView()
+                } else if library.tracks.isEmpty && library.linkedFolders.isEmpty && !library.isScanning {
                     ScrollView {
                         EmptyLibraryView(importMode: $importMode).padding(.top, 80)
                     }
                 } else {
                     FolderBrowserView(sourceID: nil, path: "", title: "On My iPhone", isRoot: true)
+                }
+            }
+            .safeAreaInset(edge: .top) {
+                if !videosSeparate {
+                    Picker("Space", selection: $space) {
+                        ForEach(Space.allCases) { Label($0.rawValue, systemImage: $0 == .music ? "music.note" : "film").tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
+                    .padding(.bottom, 6)
+                    .background(.bar)
                 }
             }
             .toolbar {

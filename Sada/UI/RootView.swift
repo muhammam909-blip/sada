@@ -5,23 +5,41 @@ struct RootView: View {
     @Environment(AppRouter.self) private var router
     @AppStorage("appearance") private var appearance: Appearance = .dark
     @AppStorage(ThemeKeys.accent) private var accentHex = AccentPreset.pink.rawValue
+    @AppStorage(TabSettings.orderKey) private var tabOrder = TabSettings.defaultOrder
+    @AppStorage(TabSettings.onlineKey) private var onlineEnabled = true
+    @AppStorage(TabSettings.videosTabKey) private var videosSeparate = false
+    @AppStorage("tabs.nameRevision") private var nameRevision = 0
+
+    private var tabs: [AppTab] { TabSettings.visible(order: tabOrder, online: onlineEnabled, videosSeparate: videosSeparate) }
+
+    @ViewBuilder private func content(for tab: AppTab) -> some View {
+        switch tab {
+        case .online: OnlineView()
+        case .folders: FoldersTab()
+        case .videos: NavigationStack { VideosView().libraryDestinations() }
+        case .library: LibraryView()
+        case .search: SearchView()
+        }
+    }
     @Namespace private var namespace
 
     var body: some View {
         @Bindable var router = router
+        let _ = nameRevision
         TabView(selection: $router.tab) {
-            Tab("Home", systemImage: "house.fill", value: AppTab.home) {
-                HomeView()
+            ForEach(tabs) { tab in
+                Tab(TabSettings.name(tab), systemImage: tab.icon, value: tab) {
+                    content(for: tab)
+                }
             }
-            Tab("Library", systemImage: "square.stack.fill", value: AppTab.library) {
-                LibraryView()
-            }
-            Tab("Online", systemImage: "dot.radiowaves.left.and.right", value: AppTab.online) {
-                OnlineView()
-            }
-            Tab("Search", systemImage: "magnifyingglass", value: AppTab.search, role: .search) {
+            Tab(TabSettings.name(.search), systemImage: "magnifyingglass", value: AppTab.search, role: .search) {
                 SearchView()
             }
+        }
+        .onAppear { if !tabs.contains(router.tab) { router.tab = tabs.first ?? .folders } }
+        .onChange(of: tabs) { _, new in if !new.contains(router.tab) && router.tab != .search { router.tab = new.first ?? .folders } }
+        .fullScreenCover(item: $router.playingVideo) { video in
+            VideoPlayerScreen(item: video)
         }
         .tabBarMinimizeBehavior(.onScrollDown)
         .tabViewBottomAccessory {

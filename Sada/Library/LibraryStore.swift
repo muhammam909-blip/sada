@@ -263,6 +263,7 @@ final class LibraryStore {
         saveFolders()
         importStatus = "Reading \(folder.name)…"
         await rescan()
+        await VideoStore.shared.rescan()
         importStatus = nil
         MetadataEnricher.shared.start()
     }
@@ -286,6 +287,7 @@ final class LibraryStore {
         migrateIfNeeded()
         await rescan()
         MetadataEnricher.shared.start()
+        await VideoStore.shared.rescan()
     }
 
     /// New metadata rules (folder names → artist/album) need one full re-read.
@@ -306,6 +308,7 @@ final class LibraryStore {
         guard didBootstrap, Date().timeIntervalSince(lastScan) > 20 else { return }
         await rescan()
         MetadataEnricher.shared.start()
+        await VideoStore.shared.rescan()
     }
 
     func rescan() async {
@@ -435,6 +438,10 @@ final class LibraryStore {
     }
 
     nonisolated static func enumerateAudio(in root: URL, sourceID: String?) -> [FileEntry] {
+        enumerateFiles(in: root, sourceID: sourceID, extensions: audioExtensions)
+    }
+
+    nonisolated static func enumerateFiles(in root: URL, sourceID: String?, extensions: Set<String>) -> [FileEntry] {
         let fm = FileManager.default
         let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
         guard let enumerator = fm.enumerator(
@@ -445,7 +452,7 @@ final class LibraryStore {
         let rootPath = root.resolvingSymlinksInPath().path
         var out: [FileEntry] = []
         while let url = enumerator.nextObject() as? URL {
-            guard audioExtensions.contains(url.pathExtension.lowercased()) else { continue }
+            guard extensions.contains(url.pathExtension.lowercased()) else { continue }
             let values = try? url.resourceValues(forKeys: Set(keys))
             guard values?.isRegularFile == true else { continue }
             var path = url.resolvingSymlinksInPath().path
@@ -483,7 +490,8 @@ final class LibraryStore {
             fm.fileExists(atPath: url.path, isDirectory: &isDir)
             if isDir.boolValue {
                 let folderTarget = uniqueURL(dest.appendingPathComponent(url.lastPathComponent, isDirectory: true))
-                for entry in Self.enumerateAudio(in: url, sourceID: nil) {
+                let media = Self.audioExtensions.union(VideoStore.videoExtensions).union(["srt", "vtt"])
+                for entry in Self.enumerateFiles(in: url, sourceID: nil, extensions: media) {
                     jobs.append((url.appendingPathComponent(entry.relativePath),
                                  folderTarget.appendingPathComponent(entry.relativePath)))
                 }
@@ -511,8 +519,9 @@ final class LibraryStore {
         if let left = try? fm.contentsOfDirectory(atPath: inbox.path), left.isEmpty {
             try? fm.removeItem(at: inbox)
         }
-        importStatus = jobs.isEmpty ? nil : "Reading \(jobs.count) songs…"
+        importStatus = jobs.isEmpty ? nil : "Reading \(jobs.count) files…"
         await rescan()
+        await VideoStore.shared.rescan()
         importStatus = nil
         MetadataEnricher.shared.start()
     }

@@ -24,6 +24,11 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
+                    NavigationLink { TabSettingsView() } label: { Label("Tabs", systemImage: "rectangle.split.3x1") }
+                    NavigationLink { VideoSettingsView() } label: { Label("Videos & Subtitles", systemImage: "film") }
+                }
+
+                Section {
                     Picker("Theme", selection: $appearance) {
                         ForEach(Appearance.allCases) { Text($0.rawValue).tag($0) }
                     }

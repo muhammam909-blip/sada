@@ -199,8 +199,12 @@ struct FolderBrowserView: View {
                     }
                 }
             }
-            ToolbarItemGroup(placement: .bottomBar) {
-                if editMode.isEditing {
+        }
+        // While selecting: hide the tab bar and show a floating action bar in its place.
+        .toolbar(editMode.isEditing ? .hidden : .visible, for: .tabBar)
+        .safeAreaInset(edge: .bottom) {
+            if editMode.isEditing {
+                HStack(spacing: 10) {
                     Button(selection.isEmpty ? "Select All" : "Deselect") {
                         if selection.isEmpty {
                             selection = Set(listing.tracks.map(\.id) + listing.folders.map { Self.folderTag + childPath($0) })
@@ -208,18 +212,32 @@ struct FolderBrowserView: View {
                             selection.removeAll()
                         }
                     }
+                    .font(.subheadline.weight(.medium))
                     Spacer()
-                    Text(selection.isEmpty ? "" : "\(selection.count) selected").font(.footnote).foregroundStyle(.secondary)
+                    Text(selection.isEmpty ? "None selected" : "\(selection.count) selected")
+                        .font(.footnote).foregroundStyle(.secondary)
                     Spacer()
                     Button {
                         router.trackSheet = .moveItems(tracks: selectedTracks, folders: selectedFolders, source: sourceID)
-                    } label: { Label("Move", systemImage: "folder") }
-                        .disabled(selection.isEmpty)
-                    Button(role: .destructive) { confirmDeleteSelected = true } label: { Label("Delete", systemImage: "trash") }
-                        .disabled(selection.isEmpty)
+                    } label: {
+                        Image(systemName: "folder").font(.title3).frame(width: 44, height: 44)
+                    }
+                    .disabled(selection.isEmpty)
+                    Button(role: .destructive) { confirmDeleteSelected = true } label: {
+                        Image(systemName: "trash").font(.title3).frame(width: 44, height: 44)
+                    }
+                    .tint(.red)
+                    .disabled(selection.isEmpty)
                 }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 6)
+                .background(.regularMaterial, in: Capsule())
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .animation(.snappy, value: editMode.isEditing)
         .alert("New Folder", isPresented: $askNewFolder) {
             TextField("Name", text: $newFolderName)
             Button("Create") { library.createFolder(sourceID: sourceID, parent: path, name: newFolderName) }
