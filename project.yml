@@ -9,7 +9,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.6.1"
+    MARKETING_VERSION: "0.7.0"
     CURRENT_PROJECT_VERSION: "1"
     CODE_SIGN_STYLE: Manual
     DEVELOPMENT_TEAM: ""
@@ -59,9 +59,11 @@ targets:
         UIBackgroundModes:
           - audio
         NSSupportsLiveActivities: true
-        UIDesignRequiresCompatibility: true
         NSPhotoLibraryUsageDescription: Choose a picture to use as song artwork.
         UIFileSharingEnabled: true
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSLocalNetworkUsageDescription: Lets MHM reach streaming addons running on your computer.
         LSSupportsOpeningDocumentsInPlace: false
         ALTAppGroups:
           - group.com.hammam.sada

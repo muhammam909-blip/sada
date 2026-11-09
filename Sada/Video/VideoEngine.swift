@@ -58,7 +58,8 @@ final class VideoPlayerController {
     @ObservationIgnored private var statusObservation: NSKeyValueObservation?
     @ObservationIgnored private var rateObservation: NSKeyValueObservation?
     @ObservationIgnored private var endObserver: NSObjectProtocol?
-    @ObservationIgnored private var pollTask: Task<Void, Never>?
+    @ObservationIgnored private var vlcObservers: [NSObjectProtocol] = []
+    @ObservationIgnored private var pendingStart: Double?
     @ObservationIgnored private var lastSave = Date.distantPast
     @ObservationIgnored private var vlcResumeDone = false
 
@@ -107,7 +108,7 @@ final class VideoPlayerController {
         currentURL = url
         let ext = url.pathExtension.lowercased()
         let choice = VideoEngineChoice(rawValue: UserDefaults.standard.string(forKey: "video.engine") ?? "") ?? .auto
-        if choice == .auto && VideoStore.nativeExtensions.contains(ext) {
+        if choice == .auto && VideoStore.nativeExtensions.contains(ext) && url.isFileURL {
             startApple(url)
         } else {
             startVLC(url)
@@ -118,7 +119,6 @@ final class VideoPlayerController {
     private func startApple(_ url: URL) {
         backend = .apple
         vlc.stop()
-        pollTask?.cancel()
         let playerItem = AVPlayerItem(url: url)
         statusObservation = playerItem.observe(\.status, options: [.new]) { [weak self] it, _ in
             let status = it.status
@@ -135,17 +135,23 @@ final class VideoPlayerController {
         backend = .vlc
         avPlayer.replaceCurrentItem(with: nil)
         pip = nil
+        isReady = false
+        vlcResumeDone = false
         let media = VLCMedia(url: url)
-        media.addOption(":file-caching=800")
+        media.addOption(url.isFileURL ? ":file-caching=800" : ":network-caching=1500")
         vlc.media = media
-        vlc.play()
-        pollTask?.cancel()
-        pollTask = Task { [weak self] in
-            while !Task.isCancelled {
-                self?.pollVLC()
-                try? await Task.sleep(for: .milliseconds(250))
-            }
+        // VLC reports progress through notifications on the main thread. Polling its
+        // properties from the main thread can deadlock VLC, which froze the controls.
+        if vlcObservers.isEmpty {
+            let center = NotificationCenter.default
+            vlcObservers.append(center.addObserver(forName: Notification.Name("VLCMediaPlayerTimeChanged"), object: vlc, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.vlcTimeChanged() }
+            })
+            vlcObservers.append(center.addObserver(forName: Notification.Name("VLCMediaPlayerStateChanged"), object: vlc, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.vlcStateChanged() }
+            })
         }
+        vlc.play()
     }
 
     private func appleStatusChanged(_ status: AVPlayerItem.Status) {
@@ -159,11 +165,27 @@ final class VideoPlayerController {
             resumeIfNeeded()
             avPlayer.play()
             avPlayer.rate = rate
+            checkApplePicture()
         case .failed:
             // Apple's player can't decode this file: hand it to VLC.
-            if let url = currentURL { startVLC(url) }
+            if let url = currentURL { pendingStart = currentTime > 5 ? currentTime : nil; startVLC(url) }
         default:
             break
+        }
+    }
+
+    /// Apple's player sometimes plays the sound of a video it can't decode (no picture).
+    /// If no frame size appears shortly after starting, switch to VLC at the same spot.
+    private func checkApplePicture() {
+        let videoID = item.id
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            guard backend == .apple, item.id == videoID, let current = avPlayer.currentItem else { return }
+            let hasVideoTrack = !((try? await current.asset.loadTracks(withMediaType: .video)) ?? []).isEmpty
+            if hasVideoTrack && current.presentationSize == .zero, let url = currentURL {
+                pendingStart = currentTime
+                startVLC(url)
+            }
         }
     }
 
@@ -182,36 +204,43 @@ final class VideoPlayerController {
         if !cues.isEmpty, let g = legibleGroup { avPlayer.currentItem?.select(nil, in: g) }
     }
 
-    private func pollVLC() {
+    private func vlcTimeChanged() {
         guard backend == .vlc else { return }
         let t = Double(vlc.time.intValue) / 1000
-        let len = Double(vlc.media?.length.intValue ?? 0) / 1000
-        if len > 0 { duration = len }
-        isPlaying = vlc.isPlaying
-
-        switch vlc.state {
-        case .error:
-            failureMessage = "This video couldn't be played."
-            return
-        case .ended:
-            if !ended { didEnd() }
-            return
-        default:
-            break
+        if duration <= 0 || !isReady {
+            let len = Double(vlc.media?.length.intValue ?? 0) / 1000
+            if len > 0 { duration = len }
         }
-
-        if !isReady, vlc.isPlaying {
+        if !isReady {
             isReady = true
+            isPlaying = true
             vlc.rate = rate
-        }
-        if isReady {
-            if !vlcResumeDone, len > 0 {
-                vlcResumeDone = true
-                resumeIfNeeded()
-            }
             refreshVLCTracks()
         }
+        if !vlcResumeDone, duration > 0 {
+            vlcResumeDone = true
+            resumeIfNeeded()
+        }
         tick(t)
+    }
+
+    private func vlcStateChanged() {
+        guard backend == .vlc else { return }
+        switch vlc.state {
+        case .playing:
+            isPlaying = true
+            if isReady { refreshVLCTracks() }
+        case .paused, .stopped:
+            isPlaying = false
+        case .ended:
+            isPlaying = false
+            if !ended { didEnd() }
+        case .error:
+            isPlaying = false
+            failureMessage = "This video couldn't be played."
+        default:
+            if isReady { refreshVLCTracks() }
+        }
     }
 
     private func refreshVLCTracks() {
@@ -234,6 +263,11 @@ final class VideoPlayerController {
     }
 
     private func resumeIfNeeded() {
+        if let start = pendingStart {
+            pendingStart = nil
+            seek(to: start)
+            return
+        }
         guard UserDefaults.standard.object(forKey: "video.resume") as? Bool ?? true else { return }
         if item.position > 15, duration == 0 || item.position < duration - 30 {
             resumedFrom = item.position
@@ -399,7 +433,8 @@ final class VideoPlayerController {
         saveProgress()
         avPlayer.pause()
         vlc.stop()
-        pollTask?.cancel()
+        vlcObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        vlcObservers = []
         if let timeObserver { avPlayer.removeTimeObserver(timeObserver) }
         timeObserver = nil
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }

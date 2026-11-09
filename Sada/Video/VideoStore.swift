@@ -36,7 +36,8 @@ final class VideoStore {
     // MARK: Lookup
 
     func url(for video: VideoItem) -> URL? {
-        LibraryStore.shared.rootURL(for: video.sourceID)?.appendingPathComponent(video.relativePath)
+        if video.isRemote { return URL(string: video.relativePath) }
+        return LibraryStore.shared.rootURL(for: video.sourceID)?.appendingPathComponent(video.relativePath)
     }
 
     func artURL(_ file: String?) -> URL? { file.map { artDir.appendingPathComponent($0) } }
@@ -64,7 +65,7 @@ final class VideoStore {
     func show(id: String) -> VideoShow? { shows.first { $0.id == id } }
 
     func nextEpisode(after video: VideoItem) -> VideoItem? {
-        guard video.kind == .episode, let show = show(id: video.showKey),
+        guard video.kind == .episode, !video.isRemote, let show = show(id: video.showKey),
               let i = show.episodes.firstIndex(where: { $0.id == video.id }), i + 1 < show.episodes.count else { return nil }
         return show.episodes[i + 1]
     }
@@ -73,7 +74,7 @@ final class VideoStore {
     func subtitleFiles(for video: VideoItem) -> [URL] {
         var out: [URL] = []
         let fm = FileManager.default
-        if let url = url(for: video) {
+        if !video.isRemote, let url = url(for: video) {
             let dir = url.deletingLastPathComponent()
             let base = url.deletingPathExtension().lastPathComponent.lowercased()
             if let items = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) {
@@ -249,8 +250,26 @@ final class VideoStore {
         fetchMetadata()
     }
 
+    /// Extra copies of the same file (same name and size), keeping the oldest one.
+    var duplicates: [VideoItem] {
+        var seen = Set<String>()
+        var extra: [VideoItem] = []
+        for v in videos.sorted(by: { $0.dateAdded < $1.dateAdded }) {
+            let key = "\(LibraryStore.baseName(v.fileName))|\(v.fileSize)"
+            if !seen.insert(key).inserted { extra.append(v) }
+        }
+        return extra
+    }
+
+    func removeDuplicates() {
+        for v in duplicates { delete(v) }
+    }
+
     func delete(_ video: VideoItem) {
-        if let url = url(for: video) { try? FileManager.default.removeItem(at: url) }
+        if !video.isRemote, let url = url(for: video) { try? FileManager.default.removeItem(at: url) }
+        for sub in subtitleFiles(for: video) where sub.path.hasPrefix(subtitlesDir.path) {
+            try? FileManager.default.removeItem(at: sub)
+        }
         videos.removeAll { $0.id == video.id }
         save()
     }

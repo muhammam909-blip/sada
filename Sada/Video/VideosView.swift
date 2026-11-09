@@ -47,8 +47,33 @@ struct PosterImage: View {
 struct VideosView: View {
     @State private var store = VideoStore.shared
     @Environment(AppRouter.self) private var router
+    @State private var confirmDuplicates = false
+    @AppStorage("videos.space") private var space = "library"
+    @AppStorage(TabSettings.onlineKey) private var onlineEnabled = true
 
     var body: some View {
+        Group {
+            if space == "discover" && onlineEnabled {
+                DiscoverView()
+            } else {
+                libraryBody
+            }
+        }
+        .safeAreaInset(edge: .top) {
+            if onlineEnabled {
+                Picker("Videos", selection: $space) {
+                    Text("My Videos").tag("library")
+                    Text("Discover").tag("discover")
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.bottom, 6)
+            }
+        }
+        .navigationTitle("Videos")
+    }
+
+    private var libraryBody: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 28) {
                 if let status = store.metadataStatus {
@@ -117,11 +142,29 @@ struct VideosView: View {
                 Menu {
                     Button { Task { await store.rescan() } } label: { Label("Rescan", systemImage: "arrow.clockwise") }
                     Button { store.fetchMetadata(force: true) } label: { Label("Refresh Posters & Info", systemImage: "photo.on.rectangle") }
+                    Button(role: .destructive) { confirmDuplicates = true } label: { Label("Remove Duplicate Copies", systemImage: "square.on.square.dashed") }
                 } label: { Image(systemName: "ellipsis") }
             }
         }
         .refreshable { await store.rescan() }
         .task { await store.rescan() }
+        .confirmationDialog(
+            "Delete “\(router.deleteVideoCandidate?.fileName ?? "")”?",
+            isPresented: Binding(get: { router.deleteVideoCandidate != nil }, set: { if !$0 { router.deleteVideoCandidate = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Delete Video", role: .destructive) {
+                if let v = router.deleteVideoCandidate { store.delete(v) }
+                router.deleteVideoCandidate = nil
+            }
+        } message: {
+            Text("The file (and its downloaded subtitles) is removed from your iPhone. This can't be undone.")
+        }
+        .confirmationDialog("Remove duplicate copies?", isPresented: $confirmDuplicates, titleVisibility: .visible) {
+            Button("Remove \(store.duplicates.count) Duplicates", role: .destructive) { store.removeDuplicates() }
+        } message: {
+            Text("Keeps one copy of every video that was added more than once (same name and size).")
+        }
         .navigationDestination(for: VideoRoute.self) { route in
             switch route {
             case .show(let id): ShowDetailView(showID: id)
@@ -226,6 +269,10 @@ struct VideoMenu: View {
         Button { router.playingVideo = video } label: { Label(video.isInProgress ? "Resume" : "Play", systemImage: "play.fill") }
         Button { VideoStore.shared.setWatched(video.id, !video.watched) } label: {
             Label(video.watched ? "Mark as Unwatched" : "Mark as Watched", systemImage: video.watched ? "eye.slash" : "eye")
+        }
+        Divider()
+        Button(role: .destructive) { router.deleteVideoCandidate = video } label: {
+            Label("Delete Video", systemImage: "trash")
         }
     }
 }

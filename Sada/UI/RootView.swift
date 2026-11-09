@@ -44,17 +44,22 @@ struct RootView: View {
         TabView(selection: $router.tab) {
             ForEach(tabs) { tab in
                 Tab(TabSettings.name(tab), systemImage: tab.icon, value: tab) {
-                    content(for: tab).safeAreaInset(edge: .bottom) { miniPlayer }
+                    content(for: tab)
                 }
             }
             Tab(TabSettings.name(.search), systemImage: "magnifyingglass", value: AppTab.search, role: .search) {
-                SearchView().safeAreaInset(edge: .bottom) { miniPlayer }
+                SearchView()
             }
         }
         .onAppear { if !tabs.contains(router.tab) { router.tab = tabs.first ?? .folders } }
         .onChange(of: tabs) { _, new in if !new.contains(router.tab) && router.tab != .search { router.tab = new.first ?? .folders } }
-        .fullScreenCover(item: $router.playingVideo) { video in
-            VideoPlayerScreen(item: video)
+        .onChange(of: router.playingVideo?.id) { _, id in
+            if id != nil, let video = router.playingVideo { VideoPresenter.present(video) }
+        }
+        .tabBarMinimizeBehavior(.onScrollDown)
+        .tabViewBottomAccessory {
+            MiniPlayerView { router.showNowPlaying = true }
+                .matchedTransitionSource(id: "nowPlaying", in: namespace)
         }
         .trackActionSheets(enabled: !router.showNowPlaying)
         .fullScreenCover(isPresented: $router.showNowPlaying) {

@@ -87,6 +87,14 @@ struct VideoSettingsView: View {
     var body: some View {
         Form {
             Section {
+                NavigationLink { AddonSettingsView() } label: {
+                    LabeledContent("Online Sources", value: "\(AddonStore.shared.addons.count) addons")
+                }
+            } footer: {
+                Text("Netflix-style browsing and streaming in Videos › Discover, using Nuvio/Stremio addon links.")
+            }
+
+            Section {
                 Picker("Video Engine", selection: $engine) {
                     ForEach(VideoEngineChoice.allCases) { Text($0.rawValue).tag($0.rawValue) }
                 }

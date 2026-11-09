@@ -147,9 +147,9 @@ struct AppearanceSettingsView: View {
             }
 
             Section {
-                LabeledContent("Design", value: "Classic (Liquid Glass off)")
+                LabeledContent("Design", value: "Liquid Glass")
             } footer: {
-                Text("MHM uses the classic solid iOS design everywhere. This is built into the app; ask if you want Liquid Glass back.")
+                Text("MHM uses the iOS 26 Liquid Glass design.")
             }
         }
         .navigationTitle("Appearance")

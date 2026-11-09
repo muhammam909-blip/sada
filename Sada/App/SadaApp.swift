@@ -46,6 +46,7 @@ final class AppRouter {
     var deleteCandidate: Track?
     var tab: AppTab = .online
     var playingVideo: VideoItem?
+    var deleteVideoCandidate: VideoItem?
     var onlineQuery: String?
 }
 

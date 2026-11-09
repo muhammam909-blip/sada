@@ -499,6 +499,16 @@ final class LibraryStore {
             }
         }
 
+        // Skip files that are already in MHM (same name and size), so a movie or
+        // episode copied again doesn't show up twice.
+        let known = existingFileKeys()
+        var skipped = 0
+        jobs = jobs.filter { job in
+            let size = (try? job.0.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? -1
+            if known.contains("\(Self.baseName(job.0.lastPathComponent))|\(size)") { skipped += 1; return false }
+            return true
+        }
+
         for (n, job) in jobs.enumerated() {
             importStatus = "Copying \(n + 1) of \(jobs.count)…"
             let (from, to) = job
@@ -518,11 +528,30 @@ final class LibraryStore {
         if let left = try? fm.contentsOfDirectory(atPath: inbox.path), left.isEmpty {
             try? fm.removeItem(at: inbox)
         }
-        importStatus = jobs.isEmpty ? nil : "Reading \(jobs.count) files…"
+        importStatus = jobs.isEmpty ? (skipped > 0 ? "Already in MHM — nothing new to copy" : nil) : "Reading \(jobs.count) files…"
         await rescan()
         await VideoStore.shared.rescan()
+        if jobs.isEmpty && skipped > 0 {
+            try? await Task.sleep(for: .seconds(3))
+        }
         importStatus = nil
         MetadataEnricher.shared.start()
+    }
+
+    /// "name|size" of every song, video and subtitle already stored, used to skip duplicates.
+    private func existingFileKeys() -> Set<String> {
+        var keys = Set<String>()
+        for t in tracks { keys.insert("\(Self.baseName((t.relativePath as NSString).lastPathComponent))|\(t.fileSize)") }
+        for v in VideoStore.shared.videos { keys.insert("\(Self.baseName(v.fileName))|\(v.fileSize)") }
+        return keys
+    }
+
+    /// File name without the " 2" / " 3" suffix added for copies.
+    nonisolated static func baseName(_ name: String) -> String {
+        let ext = (name as NSString).pathExtension
+        var base = (name as NSString).deletingPathExtension
+        if let r = base.range(of: #" \d+$"#, options: .regularExpression) { base.removeSubrange(r) }
+        return (ext.isEmpty ? base : base + "." + ext).lowercased()
     }
 
     func uniqueURL(_ url: URL) -> URL {
