@@ -73,7 +73,7 @@ struct AlbumDetailView: View {
                 ForEach(Array(album.tracks.enumerated()), id: \.element.id) { i, track in
                     TrackRow(track: track, number: track.trackNumber ?? (i + 1))
                         .onTapGesture { player.play(album.tracks, startAt: i) }
-                        .contextMenu { TrackMenuItems(track: track) }
+                        .trackContextMenu(track)
                 }
 
                 Text("\(album.tracks.count) songs, \(Int(album.totalDuration / 60)) minutes")
@@ -131,7 +131,7 @@ struct ArtistDetailView: View {
                     ForEach(Array(artist.tracks.enumerated()), id: \.element.id) { i, track in
                         TrackRow(track: track)
                             .onTapGesture { player.play(artist.tracks, startAt: i) }
-                            .contextMenu { TrackMenuItems(track: track) }
+                            .trackContextMenu(track)
                     }
                 } header: {
                     Text("Songs").font(.title2.bold()).foregroundStyle(.primary)

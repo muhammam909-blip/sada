@@ -174,33 +174,86 @@ struct TrackMenuItems: View {
 
     @ViewBuilder private var onlineItems: some View {
         if showQueueActions {
-            Button { player.playNext(track) } label: { Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") }
-            Button { player.addToQueue(track) } label: { Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward") }
-        }
-        Button { DownloadManager.shared.download(OnlineTrack.song(from: track)) } label: {
-            Label("Download", systemImage: "arrow.down.circle")
+            ControlGroup {
+                Button { player.playNext(track) } label: { Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") }
+                Button { player.addToQueue(track) } label: { Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward") }
+                Button { DownloadManager.shared.download(OnlineTrack.song(from: track)) } label: { Label("Download", systemImage: "arrow.down.circle") }
+            }
+            .controlGroupStyle(.compactMenu)
+        } else {
+            Button { DownloadManager.shared.download(OnlineTrack.song(from: track)) } label: {
+                Label("Download", systemImage: "arrow.down.circle")
+            }
         }
         Button { player.startRadio(for: track) } label: { Label("Start Radio", systemImage: "dot.radiowaves.left.and.right") }
     }
 
+    /// Apple Music style: a row of quick actions on top, then grouped sections.
     @ViewBuilder private var libraryItems: some View {
-        if showQueueActions {
-            Button { player.playNext(track) } label: { Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") }
-            Button { player.addToQueue(track) } label: { Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward") }
-            Divider()
+        ControlGroup {
+            if showQueueActions {
+                Button { player.playNext(track) } label: { Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") }
+                Button { player.addToQueue(track) } label: { Label("Play Last", systemImage: "text.line.last.and.arrowtriangle.forward") }
+            }
+            Button { library.toggleFavorite(track.id) } label: {
+                Label(fresh.isFavorite ? "Unfavorite" : "Favorite", systemImage: fresh.isFavorite ? "heart.slash.fill" : "heart")
+            }
         }
-        Button { player.startRadio(for: track) } label: { Label("Start Radio", systemImage: "dot.radiowaves.left.and.right") }
-        Button { library.toggleFavorite(track.id) } label: {
-            Label(fresh.isFavorite ? "Remove from Favorites" : "Favorite", systemImage: fresh.isFavorite ? "heart.slash" : "heart")
+        .controlGroupStyle(.compactMenu)
+
+        Section {
+            Button { player.startRadio(for: track) } label: { Label("Start Radio", systemImage: "dot.radiowaves.left.and.right") }
+            Button { router.trackSheet = .addToPlaylist(fresh) } label: { Label("Add to Playlist…", systemImage: "text.badge.plus") }
+            Button { router.trackSheet = .move([fresh.id]) } label: { Label("Move to Folder…", systemImage: "folder") }
         }
-        Button { router.trackSheet = .addToPlaylist(fresh) } label: { Label("Add to Playlist…", systemImage: "text.badge.plus") }
-        Divider()
-        Button { router.trackSheet = .edit(fresh) } label: { Label("Edit Info…", systemImage: "pencil") }
-        Button { router.trackSheet = .artwork(fresh) } label: { Label("Find Artwork…", systemImage: "photo.badge.magnifyingglass") }
-        Button { router.trackSheet = .lyrics(fresh) } label: { Label("Find Lyrics…", systemImage: "quote.bubble") }
-        Button { router.trackSheet = .move([fresh.id]) } label: { Label("Move to Folder…", systemImage: "folder") }
-        Divider()
-        Button(role: .destructive) { router.deleteCandidate = fresh } label: { Label("Delete from Library", systemImage: "trash") }
+
+        Section {
+            Menu {
+                Button { router.trackSheet = .edit(fresh) } label: { Label("Edit Info…", systemImage: "pencil") }
+                Button { router.trackSheet = .artwork(fresh) } label: { Label("Find Artwork…", systemImage: "photo.badge.magnifyingglass") }
+                Button { router.trackSheet = .lyrics(fresh) } label: { Label("Find Lyrics…", systemImage: "quote.bubble") }
+            } label: {
+                Label("Edit & Fix", systemImage: "slider.horizontal.3")
+            }
+        }
+
+        Section {
+            Button(role: .destructive) { router.deleteCandidate = fresh } label: { Label("Delete from Library", systemImage: "trash") }
+        }
+    }
+}
+
+/// Long-press preview: big artwork with title and artist (like Apple Music).
+struct TrackMenuPreview: View {
+    let track: Track
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ArtworkView(track: track, cornerRadius: 12, pixelSize: 600)
+                .frame(width: 240, height: 240)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(track.title).font(.headline).lineLimit(2)
+                Text(track.isOnline ? track.displayArtist : "\(track.displayArtist) · \(track.displayAlbum)")
+                    .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                if track.duration > 0 {
+                    Text(formatTime(track.duration)).font(.caption).foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .padding(14)
+        .frame(width: 268, alignment: .leading)
+        .environment(LibraryStore.shared)
+    }
+}
+
+extension View {
+    /// Song long-press menu with a rich preview.
+    func trackContextMenu(_ track: Track) -> some View {
+        contextMenu {
+            TrackMenuItems(track: track)
+        } preview: {
+            TrackMenuPreview(track: track)
+        }
     }
 }
 

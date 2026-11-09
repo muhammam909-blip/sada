@@ -150,7 +150,7 @@ struct PlaylistDetailView: View {
                 ForEach(Array(tracks.enumerated()), id: \.offset) { i, track in
                     TrackRow(track: track)
                         .onTapGesture { if !editMode.isEditing { player.play(tracks, startAt: i) } }
-                        .contextMenu { TrackMenuItems(track: track) }
+                        .trackContextMenu(track)
                 }
                 .onDelete { library.removeFromPlaylist(playlistID, at: $0) }
                 .onMove { library.movePlaylistItems(playlistID, from: $0, to: $1) }
@@ -210,7 +210,7 @@ struct FavoritesView: View {
             ForEach(Array(tracks.enumerated()), id: \.element.id) { i, track in
                 TrackRow(track: track)
                     .onTapGesture { if !editMode.isEditing { player.play(tracks, startAt: i) } }
-                    .contextMenu { TrackMenuItems(track: track) }
+                    .trackContextMenu(track)
             }
             .onDelete { library.removeFavorites(at: $0) }
             .onMove { library.moveFavorites(from: $0, to: $1) }
@@ -240,7 +240,7 @@ struct SmartPlaylistView: View {
             ForEach(Array(tracks.enumerated()), id: \.element.id) { i, track in
                 TrackRow(track: track)
                     .onTapGesture { player.play(tracks, startAt: i) }
-                    .contextMenu { TrackMenuItems(track: track) }
+                    .trackContextMenu(track)
             }
             if tracks.isEmpty {
                 Text("Nothing here yet — keep listening!").foregroundStyle(.secondary).listRowSeparator(.hidden)

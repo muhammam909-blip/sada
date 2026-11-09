@@ -36,8 +36,7 @@ struct OnlineView: View {
                 }
                 .animation(.smooth(duration: 0.3), value: showingSearch)
             }
-            .navigationTitle("Online")
-            .toolbarTitleDisplayMode(.inlineLarge)
+            .brandHeader(TabSettings.name(.online))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
@@ -116,7 +115,7 @@ struct OnlineView: View {
                             TrackRow(track: track)
                                 .overlay(alignment: .trailing) { SourceBadge(local: true) }
                                 .onTapGesture { player.play(Array(local.prefix(5)), startAt: i) }
-                                .contextMenu { TrackMenuItems(track: track) }
+                                .trackContextMenu(track)
                         }
                     } header: {
                         Label("On Your iPhone", systemImage: "iphone").font(.subheadline.weight(.semibold))

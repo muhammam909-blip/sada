@@ -73,7 +73,12 @@ struct SettingsPageSheet<Page: View>: View {
     var body: some View {
         NavigationStack {
             page()
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        NavigationLink { SettingsContent() } label: { Label("All Settings", systemImage: "gearshape.2") }
+                    }
+                    ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                }
         }
     }
 }
@@ -114,4 +119,46 @@ extension View {
     func adaptiveButton(prominent: Bool = false) -> some View {
         modifier(AdaptiveButtonStyle(prominent: prominent))
     }
+}
+
+// MARK: - Brand
+
+/// The MHM logo as a small round badge.
+struct BrandLogo: View {
+    var size: CGFloat = 30
+
+    var body: some View {
+        Image("BrandLogo")
+            .resizable()
+            .scaledToFill()
+            .frame(width: size, height: size)
+            .clipShape(Circle())
+            .overlay(Circle().strokeBorder(.white.opacity(0.18), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.25), radius: size / 10, y: 1)
+    }
+}
+
+/// Tab header: round logo + title on the leading side of the navigation bar.
+struct BrandHeader: ViewModifier {
+    let title: String
+
+    func body(content: Content) -> some View {
+        content
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(removing: .title)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    HStack(spacing: 10) {
+                        BrandLogo(size: 32)
+                        Text(title).font(.title2.bold()).lineLimit(1).fixedSize()
+                    }
+                }
+                .sharedBackgroundVisibility(.hidden)
+            }
+    }
+}
+
+extension View {
+    func brandHeader(_ title: String) -> some View { modifier(BrandHeader(title: title)) }
 }

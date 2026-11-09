@@ -61,7 +61,7 @@ struct LibraryView: View {
                 }
                 .padding(.bottom, 24)
             }
-            .navigationTitle("Library")
+            .brandHeader(TabSettings.name(.library))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
@@ -140,7 +140,7 @@ struct SongsView: View {
             ForEach(Array(list.enumerated()), id: \.element.id) { i, track in
                 TrackRow(track: track)
                     .onTapGesture { player.play(list, startAt: i) }
-                    .contextMenu { TrackMenuItems(track: track) }
+                    .trackContextMenu(track)
                     .swipeActions(edge: .leading) {
                         Button { player.playNext(track) } label: { Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") }
                             .tint(.indigo)

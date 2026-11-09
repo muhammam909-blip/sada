@@ -12,7 +12,7 @@ struct SearchView: View {
         NavigationStack {
             List { results }
                 .listStyle(.plain)
-                .navigationTitle("Search")
+                .brandHeader(TabSettings.name(.search))
                 .searchable(text: $query, prompt: "Songs, albums, artists, folders")
                 .libraryDestinations()
         }
@@ -71,7 +71,7 @@ struct SearchView: View {
                     ForEach(Array(shown.enumerated()), id: \.element.id) { i, track in
                         TrackRow(track: track)
                             .onTapGesture { player.play(shown, startAt: i) }
-                            .contextMenu { TrackMenuItems(track: track) }
+                            .trackContextMenu(track)
                     }
                 }
             }

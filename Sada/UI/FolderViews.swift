@@ -139,7 +139,7 @@ struct FolderBrowserView: View {
                             .onTapGesture {
                                 if !editMode.isEditing { player.play(listing.tracks, startAt: i) }
                             }
-                            .contextMenu { TrackMenuItems(track: track) }
+                            .trackContextMenu(track)
                             .swipeActions {
                                 Button(role: .destructive) { router.deleteCandidate = track } label: { Label("Delete", systemImage: "trash") }
                                 Button { router.trackSheet = .move([track.id]) } label: { Label("Move", systemImage: "folder") }
@@ -184,7 +184,7 @@ struct FolderBrowserView: View {
         .environment(\.editMode, $editMode)
         .animation(.snappy, value: listing.folders)
         .animation(.snappy, value: listing.tracks.map(\.id))
-        .navigationTitle(title)
+        .modifier(FolderTitle(title: title, isRoot: isRoot))
         .refreshable { await library.rescan() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -195,9 +195,6 @@ struct FolderBrowserView: View {
                     Menu {
                         Button { withAnimation { editMode = .active } } label: { Label("Select", systemImage: "checkmark.circle") }
                         Button { newFolderName = ""; askNewFolder = true } label: { Label("New Folder", systemImage: "folder.badge.plus") }
-                        if sourceID == nil {
-                            Button { importMode = .copyFiles } label: { Label("Copy Files & Folders Here…", systemImage: "square.and.arrow.down") }
-                        }
                     } label: {
                         Image(systemName: "ellipsis")
                     }
@@ -242,7 +239,6 @@ struct FolderBrowserView: View {
             }
         }
         .animation(.snappy, value: editMode.isEditing)
-        .addMusicImporter($importMode, destination: path)
         .alert("New Folder", isPresented: $askNewFolder) {
             TextField("Name", text: $newFolderName)
             Button("Create") { library.createFolder(sourceID: sourceID, parent: path, name: newFolderName) }
@@ -412,6 +408,20 @@ struct AddSongsSheet: View {
                     .disabled(picked.isEmpty)
                 }
             }
+        }
+    }
+}
+
+/// The root folder screen shows the MHM logo header; subfolders show their own name.
+struct FolderTitle: ViewModifier {
+    let title: String
+    let isRoot: Bool
+
+    func body(content: Content) -> some View {
+        if isRoot {
+            content.brandHeader(TabSettings.name(.folders))
+        } else {
+            content.navigationTitle(title)
         }
     }
 }

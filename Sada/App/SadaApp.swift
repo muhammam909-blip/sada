@@ -79,7 +79,7 @@ enum AppTab: String, Hashable, CaseIterable, Identifiable {
 
     var defaultName: String {
         switch self {
-        case .online: "Home"
+        case .online: "MHM Music"
         case .folders: "Folders"
         case .videos: "Videos"
         case .library: "Library"

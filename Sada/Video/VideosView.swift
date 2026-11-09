@@ -55,7 +55,7 @@ struct VideosView: View {
 
     var body: some View {
         libraryBody
-            .navigationTitle("Videos")
+            .brandHeader(TabSettings.name(.videos))
     }
 
     private var libraryBody: some View {
@@ -127,7 +127,6 @@ struct VideosView: View {
             }
             .padding(.vertical)
         }
-        .navigationTitle("Videos")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {

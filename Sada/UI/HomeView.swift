@@ -39,15 +39,11 @@ struct FoldersTab: View {
                 }
             }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { showSettings = true } label: { Image(systemName: "gearshape") }
-                }
                 ToolbarItem(placement: .topBarTrailing) {
-                    AddMusicMenu(mode: $importMode)
+                    Button { showSettings = true } label: { Image(systemName: "gearshape") }
                 }
             }
             .libraryDestinations()
-            .addMusicImporter($importMode)
             .sheet(isPresented: $showSettings) {
                 if space == .videos && !videosSeparate {
                     SettingsPageSheet { VideoSettingsView() }
@@ -62,30 +58,12 @@ struct EmptyLibraryView: View {
     @Binding var importMode: ImportMode?
 
     var body: some View {
-        VStack(spacing: 18) {
-            Image(systemName: "music.note.house.fill")
-                .font(.system(size: 64))
-                .foregroundStyle(.tint)
-                .symbolRenderingMode(.hierarchical)
-            Text("Your library is empty")
-                .font(.title2.bold())
-            Text("Link your music folder (e.g. from nPlayer) without copying,\nor copy songs into MHM.")
+        VStack(spacing: 16) {
+            BrandLogo(size: 84)
+            Text("Nothing here yet").font(.title2.bold())
+            Text("Copy music and videos from your computer into\nFiles › On My iPhone › MHM.\nThey show up here automatically.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
-            Button {
-                importMode = .linkFolder
-            } label: {
-                Label("Link a Music Folder", systemImage: "link")
-                    .padding(.horizontal, 8)
-            }
-            .adaptiveButton(prominent: true)
-            .controlSize(.large)
-            Button {
-                importMode = .copyFiles
-            } label: {
-                Label("Copy Files & Folders", systemImage: "folder.badge.plus")
-            }
-            .adaptiveButton()
             ImportStatusBanner()
         }
         .padding()
@@ -159,7 +137,7 @@ struct TrackShelf: View {
                             ForEach(Array(column.enumerated()), id: \.offset) { rowIndex, track in
                                 TrackRow(track: track)
                                     .onTapGesture { player.play(tracks, startAt: colIndex * 4 + rowIndex) }
-                                    .contextMenu { TrackMenuItems(track: track) }
+                                    .trackContextMenu(track)
                             }
                         }
                         .frame(width: 300)

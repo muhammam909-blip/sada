@@ -25,8 +25,21 @@ struct SettingsRow<Destination: View>: View {
 }
 
 struct SettingsView: View {
-    @Environment(LibraryStore.self) private var library
     @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            SettingsContent()
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                }
+        }
+    }
+}
+
+/// The main settings list (also reachable from every tab's settings sheet).
+struct SettingsContent: View {
+    @Environment(LibraryStore.self) private var library
     @AppStorage("appearance") private var appearance: Appearance = .dark
     @AppStorage(TabSettings.onlineKey) private var onlineEnabled = true
     @AppStorage("video.engine") private var engine = VideoEngineChoice.auto.rawValue
@@ -38,16 +51,10 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        NavigationStack {
             List {
                 Section {
                     HStack(spacing: 14) {
-                        Image(systemName: "waveform")
-                            .font(.title2.weight(.bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 56, height: 56)
-                            .background(LinearGradient(colors: [.pink, .purple], startPoint: .topLeading, endPoint: .bottomTrailing),
-                                        in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                        BrandLogo(size: 58)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("MHM").font(.title3.bold())
                             Text("\(library.tracks.count) songs · \(VideoStore.shared.videos.count) videos")
@@ -91,10 +98,6 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
-            }
-        }
     }
 }
 
@@ -286,11 +289,10 @@ struct LibrarySettingsView: View {
                 .onDelete { offsets in
                     for i in offsets { library.unlinkFolder(library.linkedFolders[i]) }
                 }
-                Button { importMode = .linkFolder } label: { Label("Link a Folder", systemImage: "link") }
             } header: {
                 Text("Linked Folders")
             } footer: {
-                Text("Played in place from their app (like nPlayer), no extra space. Swipe to unlink — files are not deleted.")
+                Text("Folders you linked earlier. Swipe to unlink (files are not deleted). Add new music and videos from your computer into Files › On My iPhone › MHM.")
             }
 
             Section("Library") {
@@ -312,6 +314,5 @@ struct LibrarySettingsView: View {
             }
         }
         .navigationTitle("Library & Folders")
-        .addMusicImporter($importMode)
     }
 }
